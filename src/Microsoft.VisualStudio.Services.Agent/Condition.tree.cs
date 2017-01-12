@@ -55,14 +55,14 @@ namespace Microsoft.VisualStudio.Services.Agent
                     case TokenKind.NotEqual:
                     case TokenKind.Or:
                     case TokenKind.Xor:
-                        newNode = CreateFunction(token);
+                        newNode = CreateFunction(token, level);
 
-                        // Get next token and validate is opening punctuation.
+                        // Validate next token is opening punctuation.
                         lastToken = token;
                         token = GetNextToken();
                         if (token == null || token.Kind != TokenKind.OpenFunction)
                         {
-                            ThrowParseException("Unexpected symbol", token);
+                            ThrowParseException("Expected '(' to follow function", lastToken);
                         }
 
                         break;
@@ -70,7 +70,7 @@ namespace Microsoft.VisualStudio.Services.Agent
                     // Hashtables
                     case TokenKind.Capabilities:
                     case TokenKind.Variables:
-                        newNode = CreateHashtable(token);
+                        newNode = CreateHashtable(token, level);
 
                         // Get next token and validate is opening punctuation.
                         lastToken = token;
@@ -89,7 +89,7 @@ namespace Microsoft.VisualStudio.Services.Agent
                     case TokenKind.Version:
                     case TokenKind.String:
                         ValidateLiteral(container, token, lastToken);
-                        newNode = CreateLiteral(token);
+                        newNode = new LiteralValueNode(token.ParsedValue, _trace, level);
                         break;
                 }
 
@@ -114,10 +114,10 @@ namespace Microsoft.VisualStudio.Services.Agent
 
         private void ValidateCloseFunction(ContainerNode container, Token token, Token lastToken)
         {
-            var function = container as FunctionNode;
-            if (function == null ||                                     // Container should be a function
-                function.Parameters.Count < function.MinParameters ||   // Above min parameters threshold
-                lastToken.Kind == TokenKind.Separator)                  // Last token should not be a separator
+            var function = container as FunctionNode;                       // Validate:
+            if (function == null ||                                         // 1) Container is a function
+                function.Parameters.Count < GetMinParamCount(token.Kind) || // 2) At or above min parameters threshold
+                lastToken.Kind == TokenKind.Separator)                      // 3) Last token is not a separator
             {
                 ThrowParseException("Unexpected symbol", token);
             }
@@ -125,9 +125,9 @@ namespace Microsoft.VisualStudio.Services.Agent
 
         private void ValidateCloseHashtable(ContainerNode container, Token token, Token lastToken)
         {
-            var hashtable = container as HashtableNode;
-            if (hashtable == null ||                // Container should be a hashtable
-                hashtable.Parameters.Count != 1)    // With exactly 1 parameter
+            var hashtable = container as HashtableNode; // Validate:
+            if (hashtable == null ||                    // 1) Container is a hashtable
+                hashtable.Parameters.Count != 1)        // 2) Exactly 1 parameter
             {
                 ThrowParseException("Unexpected symbol", token);
             }
@@ -158,11 +158,11 @@ namespace Microsoft.VisualStudio.Services.Agent
 
         private void ValidateSeparator(ContainerNode container, Token token, Token lastToken)
         {
-            var function = container as FunctionNode;
-            if (function == null ||                                     // Container should be a function
-                function.Parameters.Count < 1 ||                        // With at least 1 parameter
-                function.Parameters.Count >= function.MaxParameters ||  // Under max parameters threshold
-                lastToken.Kind == TokenKind.Separator)                  // Last token should not be a separator
+            var function = container as FunctionNode;                           // Validate:
+            if (function == null ||                                             // 1) Container is a function
+                function.Parameters.Count < 1 ||                                // 2) At least one parameter
+                function.Parameters.Count >= GetMaxParamCount(token.Kind) ||    // 3) Under max parameters threshold
+                lastToken.Kind == TokenKind.Separator)                          // 4) Last token is not a separator
             {
                 ThrowParseException("Unexpected symbol", token);
             }
@@ -402,46 +402,91 @@ namespace Microsoft.VisualStudio.Services.Agent
             throw new ParseException($"{description}: '{rawToken}'. Located at position {position} within condition expression: {_raw}");
         }
 
-        private FunctionNode CreateFunction(FunctionToken token, int level)
+        private FunctionNode CreateFunction(Token token, int level)
         {
             ArgUtil.NotNull(token, nameof(token));
-            switch (token.Name)
+            switch (token.Kind)
             {
-                case Constants.Conditions.And:
-                    return new AndFunction(token, _trace, level);
-                case Constants.Conditions.Equal:
-                    return new EqualFunction(token, _trace, level);
-                case Constants.Conditions.GreaterThan:
-                    return new GreaterThanFunction(token, _trace, level);
-                case Constants.Conditions.GreaterThanOrEqual:
-                    return new GreaterThanOrEqualFunction(token, _trace, level);
-                case Constants.Conditions.LessThan:
-                    return new LessThanFunction(token, _trace, level);
-                case Constants.Conditions.LessThanOrEqual:
-                    return new LessThanOrEqualFunction(token, _trace, level);
-                case Constants.Conditions.Not:
-                    return new NotFunction(token, _trace, level);
-                case Constants.Conditions.NotEqual:
-                    return new NotEqualFunction(token, _trace, level);
-                case Constants.Conditions.Or:
-                    return new OrFunction(token, _trace, level);
-                case Constants.Conditions.Xor:
-                    return new XorFunction(token, _trace, level);
+                case TokenKind.And:
+                    return new AndFunction(_trace, level);
+                case TokenKind.Equal:
+                    return new EqualFunction(_trace, level);
+                case TokenKind.GreaterThan:
+                    return new GreaterThanFunction(_trace, level);
+                case TokenKind.GreaterThanOrEqual:
+                    return new GreaterThanOrEqualFunction(_trace, level);
+                case TokenKind.LessThan:
+                    return new LessThanFunction(_trace, level);
+                case TokenKind.LessThanOrEqual:
+                    return new LessThanOrEqualFunction(_trace, level);
+                case TokenKind.Not:
+                    return new NotFunction(_trace, level);
+                case TokenKind.NotEqual:
+                    return new NotEqualFunction(_trace, level);
+                case TokenKind.Or:
+                    return new OrFunction(_trace, level);
+                case TokenKind.Xor:
+                    return new XorFunction(_trace, level);
                 default:
-                    throw new NotSupportedException($"Unexpected function token name: '{token.Name}'");
+                    // Should never reach here.
+                    throw new NotSupportedException($"Unexpected function token name: '{token.Kind}'");
             }
         }
 
-        private HashtableNode CreateHashtable(HashtableToken token, int level)
+        private HashtableNode CreateHashtable(Token token, int level)
         {
             ArgUtil.NotNull(token, nameof(token));
-            switch (token.Name)
+            switch (token.Kind)
             {
-                case Constants.Conditions.Capabilities:
-                case Constants.Conditions.Variables:
+                case TokenKind.Capabilities:
+                case TokenKind.Variables:
                     throw new NotImplementedException();
                 default:
-                    throw new NotSupportedException($"Unexpected hashtable token name: '{token.Name}'");
+                    // Should never reach here.
+                    throw new NotSupportedException($"Unexpected hashtable token name: '{token.Kind}'");
+            }
+        }
+
+        private static int GetMinParamCount(TokenKind kind)
+        {
+            switch (kind)
+            {
+                case TokenKind.Not:
+                    return 1;
+                case TokenKind.And:
+                case TokenKind.Equal:
+                case TokenKind.GreaterThan:
+                case TokenKind.GreaterThanOrEqual:
+                case TokenKind.LessThan:
+                case TokenKind.LessThanOrEqual:
+                case TokenKind.NotEqual:
+                case TokenKind.Or:
+                case TokenKind.Xor:
+                    return 2;
+                default:
+                    throw new NotSupportedException($"Unexpected token kind '{kind}'. Unable to determine min param count.");
+            }
+        }
+
+        private static int GetMaxParamCount(TokenKind kind)
+        {
+            switch (kind)
+            {
+                case TokenKind.Not:
+                    return 1;
+                case TokenKind.Equal:
+                case TokenKind.GreaterThan:
+                case TokenKind.GreaterThanOrEqual:
+                case TokenKind.LessThan:
+                case TokenKind.LessThanOrEqual:
+                case TokenKind.NotEqual:
+                case TokenKind.Xor:
+                    return 2;
+                case TokenKind.And:
+                case TokenKind.Or:
+                    return int.MaxValue;
+                default:
+                    throw new NotSupportedException($"Unexpected token kind '{kind}'. Unable to determine max param count.");
             }
         }
 
@@ -464,16 +509,13 @@ namespace Microsoft.VisualStudio.Services.Agent
             private readonly Tracing _trace;
             private readonly int _level;
 
-            public Node(Token token, Tracing trace, int level)
+            public Node(Tracing trace, int level)
             {
-                Token = token;
                 _trace = trace;
                 _level = level;
             }
 
             public ContainerNode Container { get; set; }
-
-            public Token Token { get; }
 
             public abstract object GetValue();
 
@@ -627,8 +669,8 @@ namespace Microsoft.VisualStudio.Services.Agent
 
         private abstract class ContainerNode : Node
         {
-            public ContainerNode(Token token, Tracing trace, int level)
-                : base(token, trace, level)
+            public ContainerNode(Tracing trace, int level)
+                : base(trace, level)
             {
             }
 
@@ -643,67 +685,54 @@ namespace Microsoft.VisualStudio.Services.Agent
             }
         }
 
-        private sealed class LiteralNode : Node
+        private sealed class LiteralValueNode : Node
         {
-            public LiteralNode(LiteralToken token, Tracing trace, int level)
-                : base(token, trace, level)
+            private readonly object _value;
+
+            public LiteralValueNode(object value, Tracing trace, int level)
+                : base(trace, level)
             {
-                ArgUtil.NotNull(token, nameof(token));
+                _value = value;
             }
 
             public sealed override object GetValue()
             {
-                object result = (Token as LiteralToken).Value;
-                TraceValue(result, isUnconverted: true);
-                return result;
+                TraceValue(_value, isUnconverted: true);
+                return _value;
             }
         }
 
         private abstract class HashtableNode : ContainerNode
         {
-            public HashtableNode(HashtableToken token, Tracing trace, int level)
-                : base(token, trace, level)
+            public HashtableNode(Tracing trace, int level)
+                : base(trace, level)
             {
-                ArgUtil.NotNull(token, nameof(token));
             }
         }
 
         private abstract class FunctionNode : ContainerNode
         {
-            public FunctionNode(FunctionToken token, Tracing trace, int level, int minParameters, int maxParameters)
-                : base(token, trace, level)
+            public FunctionNode(Tracing trace, int level)
+                : base(trace, level)
             {
-                ArgUtil.NotNull(token, nameof(token));
-                if (minParameters < 1)
-                {
-                    throw new Exception($"Parameter {nameof(minParameters)} must be greater or equal to 1");
-                }
-
-                if (maxParameters < minParameters)
-                {
-                    throw new Exception($"Parameter {nameof(maxParameters)} must be greater or equal to {nameof(minParameters)}");
-                }
-
-                MinParameters = minParameters;
-                MaxParameters = maxParameters;
             }
 
-            public int MinParameters { get; }
+            protected abstract string Name { get; }
             
-            public int MaxParameters { get; }
-
             protected void TraceName()
             {
-                TraceInfo((Token as FunctionToken).Name + " (Function)");
+                TraceInfo($"{Name} (Function)");
             }
         }
 
         private sealed class AndFunction : FunctionNode
         {
-            public AndFunction(FunctionToken token, Tracing trace, int level)
-                : base(token, trace, level, minParameters: 2, maxParameters: int.MaxValue)
+            public AndFunction(Tracing trace, int level)
+                : base(trace, level)
             {
             }
+
+            protected override string Name => "And";
 
             public sealed override object GetValue()
             {
@@ -725,10 +754,12 @@ namespace Microsoft.VisualStudio.Services.Agent
 
         private class EqualFunction : FunctionNode
         {
-            public EqualFunction(FunctionToken token, Tracing trace, int level)
-                : base(token, trace, level, minParameters: 2, maxParameters: 2)
+            public EqualFunction(Tracing trace, int level)
+                : base(trace, level)
             {
             }
+
+            protected override string Name => "Equal";
 
             public override object GetValue()
             {
@@ -768,10 +799,12 @@ namespace Microsoft.VisualStudio.Services.Agent
 
         private class GreaterThanFunction : FunctionNode
         {
-            public GreaterThanFunction(FunctionToken token, Tracing trace, int level)
-                : base(token, trace, level, minParameters: 2, maxParameters: 2)
+            public GreaterThanFunction(Tracing trace, int level)
+                : base(trace, level)
             {
             }
+
+            protected override string Name => "GreaterThan";
 
             public override object GetValue()
             {
@@ -802,10 +835,12 @@ namespace Microsoft.VisualStudio.Services.Agent
 
         private class GreaterThanOrEqualFunction : FunctionNode
         {
-            public GreaterThanOrEqualFunction(FunctionToken token, Tracing trace, int level)
-                : base(token, trace, level, minParameters: 2, maxParameters: 2)
+            public GreaterThanOrEqualFunction(Tracing trace, int level)
+                : base(trace, level)
             {
             }
+
+            protected override string Name => "GreaterThanOrEqual";
 
             public override object GetValue()
             {
@@ -836,10 +871,12 @@ namespace Microsoft.VisualStudio.Services.Agent
 
         private sealed class LessThanFunction : GreaterThanOrEqualFunction
         {
-            public LessThanFunction(FunctionToken token, Tracing trace, int level)
-                : base(token, trace, level)
+            public LessThanFunction(Tracing trace, int level)
+                : base(trace, level)
             {
             }
+
+            protected override string Name => "LessThan";
 
             public sealed override object GetValue()
             {
@@ -851,10 +888,12 @@ namespace Microsoft.VisualStudio.Services.Agent
 
         private sealed class LessThanOrEqualFunction : GreaterThanFunction
         {
-            public LessThanOrEqualFunction(FunctionToken token, Tracing trace, int level)
-                : base(token, trace, level)
+            public LessThanOrEqualFunction(Tracing trace, int level)
+                : base(trace, level)
             {
             }
+
+            protected override string Name => "LessThanOrEqual";
 
             public sealed override object GetValue()
             {
@@ -866,10 +905,12 @@ namespace Microsoft.VisualStudio.Services.Agent
 
         private sealed class NotEqualFunction : EqualFunction
         {
-            public NotEqualFunction(FunctionToken token, Tracing trace, int level)
-                : base(token, trace, level)
+            public NotEqualFunction(Tracing trace, int level)
+                : base(trace, level)
             {
             }
+
+            protected override string Name => "NotEqual";
 
             public sealed override object GetValue()
             {
@@ -881,10 +922,12 @@ namespace Microsoft.VisualStudio.Services.Agent
 
         private sealed class NotFunction : FunctionNode
         {
-            public NotFunction(FunctionToken token, Tracing trace, int level)
-                : base(token, trace, level, minParameters: 1, maxParameters: 1)
+            public NotFunction(Tracing trace, int level)
+                : base(trace, level)
             {
             }
+
+            protected override string Name => "Not";
 
             public sealed override object GetValue()
             {
@@ -897,10 +940,12 @@ namespace Microsoft.VisualStudio.Services.Agent
 
         private sealed class OrFunction : FunctionNode
         {
-            public OrFunction(FunctionToken token, Tracing trace, int level)
-                : base(token, trace, level, minParameters: 2, maxParameters: int.MaxValue)
+            public OrFunction(Tracing trace, int level)
+                : base(trace, level)
             {
             }
+
+            protected override string Name => "Or";
 
             public sealed override object GetValue()
             {
@@ -922,10 +967,12 @@ namespace Microsoft.VisualStudio.Services.Agent
 
         private sealed class XorFunction : FunctionNode
         {
-            public XorFunction(FunctionToken token, Tracing trace, int level)
-                : base(token, trace, level, minParameters: 2, maxParameters: 2)
+            public XorFunction(Tracing trace, int level)
+                : base(trace, level)
             {
             }
+
+            protected override string Name => "Xor";
 
             public sealed override object GetValue()
             {
