@@ -7,15 +7,22 @@ namespace Microsoft.VisualStudio.Services.Agent
 {
     public sealed partial class Condition
     {
+        private sealed class ContainerInfo
+        {
+            public ContainerNode Node { get; set; }
+
+            public Token Token { get; set; }
+        }
+
         private void CreateTree()
         {
             _trace.Entering();
-            int level = 0;
-            ContainerNode container = null;
+            var containers = new Stack<ContainerInfo>();
             Token token = null;
             Token lastToken = null;
             while ((token = GetNextToken()) != null)
             {
+                TraceToken(token, containers.Count);
                 Node newNode = null;
                 switch (token.Kind)
                 {
@@ -24,24 +31,22 @@ namespace Microsoft.VisualStudio.Services.Agent
                         break;
 
                     // Punctuation
-                    case TokenKind.OpenFunction:
-                    case TokenKind.OpenHashtable:
-                        // Required opening punctuation is validated and skipped when a function or hashtable
-                        // is encountered. Any opening punctuation found at this point is an error.
-                        ThrowParseException("Unexpected symbol", token);
-                        break;
                     case TokenKind.CloseFunction:
-                        ValidateCloseFunction(container, token, lastToken);
-                        container = container.Container; // Pop container.
-                        level--;
+                        ValidateCloseFunction(containers, token, lastToken);
+                        containers.Pop();
                         break;
                     case TokenKind.CloseHashtable:
-                        ValidateCloseHashtable(container, token, lastToken);
-                        container = container.Container; // Pop container.
-                        level--;
+                        ValidateCloseHashtable(containers, token, lastToken);
+                        containers.Pop();
+                        break;
+                    case TokenKind.OpenFunction:
+                        ValidateOpenFunction(containers, token, lastToken);
+                        break;
+                    case TokenKind.OpenHashtable:
+                        ValidateOpenHashtable(containers, token, lastToken);
                         break;
                     case TokenKind.Separator:
-                        ValidateSeparator(container, token, lastToken);
+                        ValidateSeparator(containers, token, lastToken);
                         break;
 
                     // Functions
@@ -55,31 +60,13 @@ namespace Microsoft.VisualStudio.Services.Agent
                     case TokenKind.NotEqual:
                     case TokenKind.Or:
                     case TokenKind.Xor:
-                        newNode = CreateFunction(token, level);
-
-                        // Validate next token is opening punctuation.
-                        lastToken = token;
-                        token = GetNextToken();
-                        if (token == null || token.Kind != TokenKind.OpenFunction)
-                        {
-                            ThrowParseException("Expected '(' to follow function", lastToken);
-                        }
-
+                        newNode = CreateFunction(token, containers.Count);
                         break;
 
                     // Hashtables
                     case TokenKind.Capabilities:
                     case TokenKind.Variables:
-                        newNode = CreateHashtable(token, level);
-
-                        // Get next token and validate is opening punctuation.
-                        lastToken = token;
-                        token = GetNextToken();
-                        if (token == null || token.Kind != TokenKind.OpenHashtable)
-                        {
-                            ThrowParseException("Unexpected symbol", token);
-                        }
-
+                        newNode = CreateHashtable(token, containers.Count);
                         break;
 
                     // Literal values
@@ -88,66 +75,122 @@ namespace Microsoft.VisualStudio.Services.Agent
                     case TokenKind.Number:
                     case TokenKind.Version:
                     case TokenKind.String:
-                        ValidateLiteral(container, token, lastToken);
-                        newNode = new LiteralValueNode(token.ParsedValue, _trace, level);
+                        ValidateLiteral(token, lastToken);
+                        newNode = new LiteralValueNode(token.ParsedValue, _trace, containers.Count);
                         break;
                 }
 
-                // Update the tree.
-                if (_root == null)
+                if (newNode != null)
                 {
-                    _root = newNode;
+                    // Update the tree.
+                    if (_root == null)
+                    {
+                        _root = newNode;
+                    }
+                    else
+                    {
+                        containers.Peek().Node.AddParameter(newNode);
+                    }
+
+                    // Adjust the container stack.
+                    if (newNode is ContainerNode)
+                    {
+                        containers.Push(new ContainerInfo() { Node = newNode as ContainerNode, Token = token });
+                    }
+                }
+
+                lastToken = token;
+            }
+
+            // Validate all containers were closed.
+            if (containers.Count > 0)
+            {
+                ContainerInfo container = containers.Peek();
+                if (container.Token == lastToken)
+                {
+                    if (container.Node is FunctionNode)
+                    {
+                        ThrowParseException("Expected '(' to follow function", lastToken);
+                    }
+                    else
+                    {
+                        ThrowParseException("Expected '[' to follow hashtable", lastToken);
+                    }
                 }
                 else
                 {
-                    container.AddParameter(newNode);
-                }
-
-                // Push the container node.
-                if (newNode is ContainerNode)
-                {
-                    container = newNode as ContainerNode;
-                    level++;
+                    if (container.Node is FunctionNode)
+                    {
+                        ThrowParseException("Unclosed function", container.Token);
+                    }
+                    else
+                    {
+                        ThrowParseException("Unclosed hashtable", container.Token);
+                    }
                 }
             }
         }
 
-        private void ValidateCloseFunction(ContainerNode container, Token token, Token lastToken)
+        private void ValidateCloseFunction(Stack<ContainerInfo> containers, Token token, Token lastToken)
         {
-            var function = container as FunctionNode;                       // Validate:
-            if (function == null ||                                         // 1) Container is a function
-                function.Parameters.Count < GetMinParamCount(token.Kind) || // 2) At or above min parameters threshold
-                lastToken.Kind == TokenKind.Separator)                      // 3) Last token is not a separator
+            ContainerInfo container = containers.Count > 0 ? containers.Peek() : null;      // Validate:
+            if (container == null ||                                                        // 1) Container is not null
+                !(container.Node is FunctionNode) ||                                        // 2) Container is a function
+                container.Node.Parameters.Count < GetMinParamCount(container.Token.Kind) || // 3) At or above min parameters threshold
+                lastToken.Kind == TokenKind.Separator)                                      // 4) Last token is not a separator
             {
                 ThrowParseException("Unexpected symbol", token);
             }
         }
 
-        private void ValidateCloseHashtable(ContainerNode container, Token token, Token lastToken)
+        private void ValidateCloseHashtable(Stack<ContainerInfo> containers, Token token, Token lastToken)
         {
-            var hashtable = container as HashtableNode; // Validate:
-            if (hashtable == null ||                    // 1) Container is a hashtable
-                hashtable.Parameters.Count != 1)        // 2) Exactly 1 parameter
+            ContainerInfo container = containers.Count > 0 ? containers.Peek() : null;
+            //                                          // Validate:
+            if (container == null ||                    // 1) Container is not null
+                !(container.Node is HashtableNode) ||   // 2) Container is a hashtable
+                container.Node.Parameters.Count != 1)   // 3) Exactly 1 parameter
             {
                 ThrowParseException("Unexpected symbol", token);
             }
         }
 
-        private void ValidateLiteral(ContainerNode container, Token token, Token lastToken)
+        private void ValidateOpenFunction(Stack<ContainerInfo> containers, Token token, Token lastToken)
+        {
+            ContainerInfo container = containers.Count > 0 ? containers.Peek() : null;
+            //                                          // Validate:
+            if (container == null ||                    // 1) Container is not null
+                !(container.Node is FunctionNode) ||    // 2) Container is a function
+                container.Token != lastToken)           // 3) Container is the last token
+            {
+                ThrowParseException("Unexpected symbol", token);
+            }
+        }
+
+        private void ValidateOpenHashtable(Stack<ContainerInfo> containers, Token token, Token lastToken)
+        {
+            ContainerInfo container = containers.Count > 0 ? containers.Peek() : null;
+            //                                          // Validate:
+            if (container == null ||                    // 1) Container is not null
+                !(container.Node is HashtableNode) ||   // 2) Container is a function
+                container.Token != lastToken)           // 3) Container is the last token
+            {
+                ThrowParseException("Unexpected symbol", token);
+            }
+        }
+
+        private void ValidateLiteral(Token token, Token lastToken)
         {
             bool expected = false;
             if (lastToken == null) // The first token.
             {
                 expected = true;
             }
-            else if (container != null) // Inside a container
+            else if (lastToken.Kind == TokenKind.OpenFunction ||    // Preceeded by opening punctuation
+                lastToken.Kind == TokenKind.OpenHashtable ||        // or by a separator.
+                lastToken.Kind == TokenKind.Separator)
             {
-                if (lastToken.Kind == TokenKind.OpenFunction ||     // Preceeded by opening punctuation
-                    lastToken.Kind == TokenKind.OpenHashtable ||    // or by a separator.
-                    lastToken.Kind == TokenKind.Separator)
-                {
-                    expected = true;
-                }
+                expected = true;
             }
 
             if (!expected)
@@ -156,13 +199,14 @@ namespace Microsoft.VisualStudio.Services.Agent
             }
         }
 
-        private void ValidateSeparator(ContainerNode container, Token token, Token lastToken)
+        private void ValidateSeparator(Stack<ContainerInfo> containers, Token token, Token lastToken)
         {
-            var function = container as FunctionNode;                           // Validate:
-            if (function == null ||                                             // 1) Container is a function
-                function.Parameters.Count < 1 ||                                // 2) At least one parameter
-                function.Parameters.Count >= GetMaxParamCount(token.Kind) ||    // 3) Under max parameters threshold
-                lastToken.Kind == TokenKind.Separator)                          // 4) Last token is not a separator
+            ContainerInfo container = containers.Count > 0 ? containers.Peek() : null;          // Validate:
+            if (container == null ||                                                            // 1) Container is not null
+                !(container.Node is FunctionNode) ||                                            // 2) Container is a function
+                container.Node.Parameters.Count < 1 ||                                          // 3) At least one parameter
+                container.Node.Parameters.Count >= GetMaxParamCount(container.Token.Kind) ||    // 4) Under max parameters threshold
+                lastToken.Kind == TokenKind.Separator)                                          // 5) Last token is not a separator
             {
                 ThrowParseException("Unexpected symbol", token);
             }
@@ -447,6 +491,32 @@ namespace Microsoft.VisualStudio.Services.Agent
             }
         }
 
+        private void TraceToken(Token token, int level)
+        {
+            string indent = string.Empty.PadRight(level * 2, '.');
+            switch (token.Kind)
+            {
+                case TokenKind.Number:
+                case TokenKind.Version:
+                case TokenKind.String:
+                    _trace.Verbose($"{indent}{token.Kind} '{token.ParsedValue}'");
+                    break;
+                case TokenKind.Unrecognized:
+                    _trace.Verbose($"{indent}{token.Kind} '{_raw.Substring(token.Index, token.Length)}'");
+                    break;
+                case TokenKind.CloseFunction:
+                case TokenKind.CloseHashtable:
+                case TokenKind.OpenFunction:
+                case TokenKind.OpenHashtable:
+                case TokenKind.Separator:
+                    _trace.Verbose($"{indent}{_raw.Substring(token.Index, 1)}");
+                    break;
+                default:
+                    _trace.Verbose($"{indent}{token.Kind}");
+                    break;
+            }
+        }
+
         private static int GetMinParamCount(TokenKind kind)
         {
             switch (kind)
@@ -619,7 +689,7 @@ namespace Microsoft.VisualStudio.Services.Agent
 
             protected void TraceInfo(string message)
             {
-                _trace.Info(string.Empty.PadLeft(_level * 2) + (message ?? string.Empty));
+                _trace.Info(string.Empty.PadLeft(_level * 2, '.') + (message ?? string.Empty));
             }
 
             protected void TraceValue(object val, bool isUnconverted = false, bool isNotANumber = false)

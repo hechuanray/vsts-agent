@@ -127,12 +127,12 @@ namespace Microsoft.VisualStudio.Services.Agent
             if (str.Equals(bool.TrueString, StringComparison.OrdinalIgnoreCase))
             {
                 // // _trace.Verbose($"Booln:  {true}");
-                return new Token(TokenKind.True, startIndex, length);
+                return new Token(TokenKind.True, startIndex, length, true);
             }
             else if (str.Equals(bool.FalseString, StringComparison.OrdinalIgnoreCase))
             {
                 // // _trace.Verbose($"Booln:  {false}");
-                return new Token(TokenKind.False, startIndex, length);
+                return new Token(TokenKind.False, startIndex, length, false);
             }
             // Functions
             else if (str.Equals(Constants.Conditions.And, StringComparison.OrdinalIgnoreCase))
