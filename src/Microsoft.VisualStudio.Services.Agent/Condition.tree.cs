@@ -27,8 +27,7 @@ namespace Microsoft.VisualStudio.Services.Agent
                 switch (token.Kind)
                 {
                     case TokenKind.Unrecognized:
-                        ThrowParseException("Unrecognized value", token);
-                        break;
+                        throw new ParseException(ParseExceptionKind.UnrecognizedValue, token, _raw);
 
                     // Punctuation
                     case TokenKind.CloseFunction:
@@ -60,13 +59,57 @@ namespace Microsoft.VisualStudio.Services.Agent
                     case TokenKind.NotEqual:
                     case TokenKind.Or:
                     case TokenKind.Xor:
+                        // Update the tree.
                         newNode = CreateFunction(token, containers.Count);
+                        if (_root == null)
+                        {
+                            _root = newNode;
+                        }
+                        else
+                        {
+                            containers.Peek().Node.AddParameter(newNode);
+                        }
+
+                        // Push the container.
+                        containers.Push(new ContainerInfo() { Node = newNode as ContainerNode, Token = token });
+
+                        // Open-function token should follow.
+                        lastToken = token;
+                        token = GetNextToken();
+                        TraceToken(token, containers.Count);
+                        if (token == null || token.Kind != TokenKind.OpenFunction)
+                        {
+                            throw new ParseException(ParseExceptionKind.ExpectedOpenFunction, lastToken, _raw);
+                        }
+
                         break;
 
                     // Hashtables
                     case TokenKind.Capabilities:
                     case TokenKind.Variables:
+                        // Update the tree.
                         newNode = CreateHashtable(token, containers.Count);
+                        if (_root == null)
+                        {
+                            _root = newNode;
+                        }
+                        else
+                        {
+                            containers.Peek().Node.AddParameter(newNode);
+                        }
+
+                        // Push the container.
+                        containers.Push(new ContainerInfo() { Node = newNode as ContainerNode, Token = token });
+
+                        // Open-hashtable token should follow.
+                        lastToken = token;
+                        token = GetNextToken();
+                        TraceToken(token, containers.Count);
+                        if (token == null || token.Kind != TokenKind.OpenHashtable)
+                        {
+                            throw new ParseException(ParseExceptionKind.ExpectedOpenHashtable, lastToken, _raw);
+                        }
+
                         break;
 
                     // Literal values
@@ -76,27 +119,19 @@ namespace Microsoft.VisualStudio.Services.Agent
                     case TokenKind.Version:
                     case TokenKind.String:
                         ValidateLiteral(token, lastToken);
+
+                        // Update the tree.
                         newNode = new LiteralValueNode(token.ParsedValue, _trace, containers.Count);
+                        if (_root == null)
+                        {
+                            _root = newNode;
+                        }
+                        else
+                        {
+                            containers.Peek().Node.AddParameter(newNode);
+                        }
+
                         break;
-                }
-
-                if (newNode != null)
-                {
-                    // Update the tree.
-                    if (_root == null)
-                    {
-                        _root = newNode;
-                    }
-                    else
-                    {
-                        containers.Peek().Node.AddParameter(newNode);
-                    }
-
-                    // Adjust the container stack.
-                    if (newNode is ContainerNode)
-                    {
-                        containers.Push(new ContainerInfo() { Node = newNode as ContainerNode, Token = token });
-                    }
                 }
 
                 lastToken = token;
@@ -106,27 +141,13 @@ namespace Microsoft.VisualStudio.Services.Agent
             if (containers.Count > 0)
             {
                 ContainerInfo container = containers.Peek();
-                if (container.Token == lastToken)
+                if (container.Node is FunctionNode)
                 {
-                    if (container.Node is FunctionNode)
-                    {
-                        ThrowParseException("Expected '(' to follow function", lastToken);
-                    }
-                    else
-                    {
-                        ThrowParseException("Expected '[' to follow hashtable", lastToken);
-                    }
+                    throw new ParseException(ParseExceptionKind.UnclosedFunction, container.Token, _raw);
                 }
                 else
                 {
-                    if (container.Node is FunctionNode)
-                    {
-                        ThrowParseException("Unclosed function", container.Token);
-                    }
-                    else
-                    {
-                        ThrowParseException("Unclosed hashtable", container.Token);
-                    }
+                    throw new ParseException(ParseExceptionKind.UnclosedHashtable, container.Token, _raw);
                 }
             }
         }
@@ -139,7 +160,7 @@ namespace Microsoft.VisualStudio.Services.Agent
                 container.Node.Parameters.Count < GetMinParamCount(container.Token.Kind) || // 3) At or above min parameters threshold
                 lastToken.Kind == TokenKind.Separator)                                      // 4) Last token is not a separator
             {
-                ThrowParseException("Unexpected symbol", token);
+                throw new ParseException(ParseExceptionKind.UnexpectedSymbol, token, _raw);
             }
         }
 
@@ -151,7 +172,7 @@ namespace Microsoft.VisualStudio.Services.Agent
                 !(container.Node is HashtableNode) ||   // 2) Container is a hashtable
                 container.Node.Parameters.Count != 1)   // 3) Exactly 1 parameter
             {
-                ThrowParseException("Unexpected symbol", token);
+                throw new ParseException(ParseExceptionKind.UnexpectedSymbol, token, _raw);
             }
         }
 
@@ -163,7 +184,7 @@ namespace Microsoft.VisualStudio.Services.Agent
                 !(container.Node is FunctionNode) ||    // 2) Container is a function
                 container.Token != lastToken)           // 3) Container is the last token
             {
-                ThrowParseException("Unexpected symbol", token);
+                throw new ParseException(ParseExceptionKind.UnexpectedSymbol, token, _raw);
             }
         }
 
@@ -175,7 +196,7 @@ namespace Microsoft.VisualStudio.Services.Agent
                 !(container.Node is HashtableNode) ||   // 2) Container is a function
                 container.Token != lastToken)           // 3) Container is the last token
             {
-                ThrowParseException("Unexpected symbol", token);
+                throw new ParseException(ParseExceptionKind.UnexpectedSymbol, token, _raw);
             }
         }
 
@@ -195,7 +216,7 @@ namespace Microsoft.VisualStudio.Services.Agent
 
             if (!expected)
             {
-                ThrowParseException("Unexpected symbol", token);
+                throw new ParseException(ParseExceptionKind.UnexpectedSymbol, token, _raw);
             }
         }
 
@@ -208,242 +229,8 @@ namespace Microsoft.VisualStudio.Services.Agent
                 container.Node.Parameters.Count >= GetMaxParamCount(container.Token.Kind) ||    // 4) Under max parameters threshold
                 lastToken.Kind == TokenKind.Separator)                                          // 5) Last token is not a separator
             {
-                ThrowParseException("Unexpected symbol", token);
+                throw new ParseException(ParseExceptionKind.UnexpectedSymbol, token, _raw);
             }
-        }
-
-        // // private void CreateTree_old()
-        // // {
-        // //     _trace.Entering();
-        // //     int level = 0;
-        // //     ContainerNode container = null;
-        // //     for (int tokenIndex = 0; tokenIndex < _tokens.Count; tokenIndex++)
-        // //     {
-        // //         Token token = _tokens[tokenIndex];
-        // //         ThrowIfInvalid(token);
-
-        // //         // Check if punctuation.
-        // //         var punctuation = token as PunctuationToken;
-        // //         if (punctuation != null)
-        // //         {
-        // //             ValidatePunctuation(container, punctuation, tokenIndex);
-        // //             if (punctuation.Value == Constants.Conditions.CloseFunction ||
-        // //                 punctuation.Value == Constants.Conditions.CloseHashtable)
-        // //             {
-        // //                 container = container.Container; // Pop container.
-        // //                 level--;
-        // //             }
-
-        // //             continue;
-        // //         }
-
-        // //         // Validate the token and create the node.
-        // //         Node newNode = null;
-        // //         if (token is LiteralToken)
-        // //         {
-        // //             var literalToken = token as LiteralToken;
-        // //             ValidateLiteral_old(literalToken, tokenIndex);
-        // //             string traceFormat = literalToken is StringToken ? "'{0}' ({1})" : "{0} ({1})";
-        // //             _trace.Verbose(string.Empty.PadLeft(level * 2) + traceFormat, literalToken.Value, literalToken.Value.GetType().Name);
-        // //             newNode = new LiteralNode(literalToken, _trace, level);
-        // //         }
-        // //         else if (token is FunctionToken)
-        // //         {
-        // //             var functionToken = token as FunctionToken;
-        // //             ValidateFunction_old(functionToken, tokenIndex);
-        // //             tokenIndex++; // Skip the open paren that follows.
-        // //             _trace.Verbose(string.Empty.PadLeft(level * 2) + $"{functionToken.Name} (Function)");
-        // //             newNode = CreateFunction(functionToken, level);
-        // //         }
-        // //         else if (token is HashtableToken)
-        // //         {
-        // //             var hashtableToken = token as HashtableToken;
-        // //             ValidateHashtable(hashtableToken, tokenIndex);
-        // //             tokenIndex++; // Skip the open bracket that follows.
-        // //             _trace.Verbose(string.Empty.PadLeft(level * 2) + $"{hashtableToken.Name} (Hashtable)");
-        // //             newNode = CreateHashtable(hashtableToken, level);
-        // //         }
-        // //         else
-        // //         {
-        // //             throw new NotSupportedException("Unexpected token type: " + token.GetType().FullName);
-        // //         }
-
-        // //         // Update the tree.
-        // //         if (_root == null)
-        // //         {
-        // //             _root = newNode;
-        // //         }
-        // //         else
-        // //         {
-        // //             container.AddParameter(newNode);
-        // //         }
-
-        // //         // Push the container node.
-        // //         if (newNode is ContainerNode)
-        // //         {
-        // //             container = newNode as ContainerNode;
-        // //             level++;
-        // //         }
-        // //     }
-        // // }
-
-        // // private void ThrowIfInvalid(Token token)
-        // // {
-        // //     ArgUtil.NotNull(token, nameof(token));
-        // //     if (token is InvalidToken)
-        // //     {
-        // //         if (token is MalformedNumberToken)
-        // //         {
-        // //             ThrowParseException("Unable to parse number", token);
-        // //         }
-        // //         else if (token is UnterminatedStringToken)
-        // //         {
-        // //             ThrowParseException("Unterminated string", token);
-        // //         }
-        // //         else if (token is UnrecognizedToken)
-        // //         {
-        // //             ThrowParseException("Unrecognized keyword", token);
-        // //         }
-
-        // //         throw new NotSupportedException("Unexpected token type: " + token.GetType().FullName);
-        // //     }
-        // // }
-
-        // // private void ValidateLiteral_old(LiteralToken token, int tokenIndex)
-        // // {
-        // //     ArgUtil.NotNull(token, nameof(token));
-
-        // //     // Validate nothing follows, a separator follows, or close punction follows.
-        // //     Token nextToken = tokenIndex + 1 < _tokens.Count ? _tokens[tokenIndex + 1] : null;
-        // //     ValidateNullOrSeparatorOrClosePunctuation(nextToken);
-        // // }
-
-        // // private void ValidateHashtable(HashtableToken token, int tokenIndex)
-        // // {
-        // //     ArgUtil.NotNull(token, nameof(token));
-
-        // //     // Validate open bracket follows.
-        // //     PunctuationToken nextToken = tokenIndex + 1 < _tokens.Count ? _tokens[tokenIndex + 1] as PunctuationToken : null;
-        // //     if (nextToken == null || nextToken.Value != Constants.Conditions.OpenHashtable)
-        // //     {
-        // //         ThrowParseException($"Expected '{Constants.Conditions.OpenHashtable}' to follow symbol", token);
-        // //     }
-
-        // //     // Validate a literal, hashtable, or function follows.
-        // //     Token nextNextToken = tokenIndex + 2 < _tokens.Count ? _tokens[tokenIndex + 2] : null;
-        // //     if (nextNextToken as LiteralToken == null && nextNextToken as HashtableToken == null && nextNextToken as FunctionToken == null)
-        // //     {
-        // //         ThrowParseException("Expected a value to follow symbol", nextToken);
-        // //     }
-        // // }
-
-        // // private void ValidateFunction_old(FunctionToken token, int tokenIndex)
-        // // {
-        // //     ArgUtil.NotNull(token, nameof(token));
-
-        // //     // Valdiate open paren follows.
-        // //     PunctuationToken nextToken = tokenIndex + 1 < _tokens.Count ? _tokens[tokenIndex + 1] as PunctuationToken : null;
-        // //     if (nextToken == null || nextToken.Value != Constants.Conditions.OpenFunction)
-        // //     {
-        // //         ThrowParseException($"Expected '{Constants.Conditions.OpenFunction}' to follow symbol", token);
-        // //     }
-
-        // //     // Validate a literal, hashtable, or function follows.
-        // //     Token nextNextToken = tokenIndex + 2 < _tokens.Count ? _tokens[tokenIndex + 2] : null;
-        // //     if (nextNextToken as LiteralToken == null && nextNextToken as HashtableToken == null && nextNextToken as FunctionToken == null)
-        // //     {
-        // //         ThrowParseException("Expected a value to follow symbol", nextToken);
-        // //     }
-        // // }
-
-        // // private void ValidatePunctuation(ContainerNode container, PunctuationToken token, int tokenIndex)
-        // // {
-        // //     ArgUtil.NotNull(token, nameof(token));
-
-        // //     // Required open brackets and parens are validated and skipped when a hashtable
-        // //     // or function node is created. Any open bracket or paren tokens found at this
-        // //     // point are errors.
-        // //     if (token.Value == Constants.Conditions.OpenFunction ||
-        // //         token.Value == Constants.Conditions.OpenHashtable)
-        // //     {
-        // //         ThrowParseException("Unexpected symbol", token);
-        // //     }
-
-        // //     if (container == null)
-        // //     {
-        // //         // A condition cannot lead with punction.
-        // //         // And punction should not trail the closing of the root node.
-        // //         ThrowParseException("Unexpected symbol", token);
-        // //     }
-
-        // //     if (token.Value == Constants.Conditions.Separator)
-        // //     {
-        // //         // Validate current container is a function under max parameters threshold.
-        // //         var function = container as FunctionNode;
-        // //         if (function == null ||
-        // //             function.Parameters.Count >= function.MaxParameters)
-        // //         {
-        // //             ThrowParseException("Unexpected symbol", token);
-        // //         }
-
-        // //         // Validate a literal, function, or hashtable follows.
-        // //         Token nextToken = tokenIndex + 1 < _tokens.Count ? _tokens[tokenIndex + 1] : null;
-        // //         if (nextToken == null ||
-        // //             (!(nextToken is LiteralToken) && !(nextToken is FunctionToken) && !(nextToken is HashtableToken)))
-        // //         {
-        // //             ThrowParseException("Expected a value to follow the separator symbol", token);
-        // //         }
-        // //     }
-        // //     else if (token.Value == Constants.Conditions.CloseHashtable)
-        // //     {
-        // //         // Validate nothing follows, a separator follows, or close punction follows.
-        // //         Token nextToken = tokenIndex + 1 < _tokens.Count ? _tokens[tokenIndex + 1] : null;
-        // //         ValidateNullOrSeparatorOrClosePunctuation(nextToken);
-        // //     }
-        // //     else if (token.Value == Constants.Conditions.CloseFunction)
-        // //     {
-        // //         // Validate current container is a function above min parameters threshold.
-        // //         var function = container as FunctionNode;
-        // //         if (function == null ||
-        // //             function.Parameters.Count < function.MinParameters)
-        // //         {
-        // //             ThrowParseException("Unexpected symbol", token);
-        // //         }
-
-        // //         // Validate nothing follows, a separator follows, or close punction follows.
-        // //         Token nextToken = tokenIndex + 1 < _tokens.Count ? _tokens[tokenIndex + 1] : null;
-        // //         ValidateNullOrSeparatorOrClosePunctuation(nextToken);
-        // //     }
-        // // }
-
-        // // private void ValidateNullOrSeparatorOrClosePunctuation(Token token)
-        // // {
-        // //     if (token == null)
-        // //     {
-        // //         return;
-        // //     }
-
-        // //     var punctuation = token as PunctuationToken;
-        // //     if (punctuation != null)
-        // //     {
-        // //         switch (punctuation.Value)
-        // //         {
-        // //             case Constants.Conditions.CloseFunction:
-        // //             case Constants.Conditions.CloseHashtable:
-        // //             case Constants.Conditions.Separator:
-        // //                 return;
-        // //         }
-        // //     }
-
-        // //     ThrowParseException("Unexpected symbol", token);
-        // // }
-
-        private void ThrowParseException(string description, Token token)
-        {
-            string rawToken = _raw.Substring(token.Index, token.Length);
-            int position = token.Index + 1;
-            // TODO: loc
-            throw new ParseException($"{description}: '{rawToken}'. Located at position {position} within condition expression: {_raw}");
         }
 
         private FunctionNode CreateFunction(Token token, int level)
@@ -533,7 +320,7 @@ namespace Microsoft.VisualStudio.Services.Agent
                 case TokenKind.Or:
                 case TokenKind.Xor:
                     return 2;
-                default:
+                default: // Should never reach here.
                     throw new NotSupportedException($"Unexpected token kind '{kind}'. Unable to determine min param count.");
             }
         }
@@ -555,16 +342,129 @@ namespace Microsoft.VisualStudio.Services.Agent
                 case TokenKind.And:
                 case TokenKind.Or:
                     return int.MaxValue;
-                default:
+                default: // Should never reach here.
                     throw new NotSupportedException($"Unexpected token kind '{kind}'. Unable to determine max param count.");
             }
         }
 
-        private sealed class ParseException : Exception
+        public sealed class ParseException : Exception
         {
-            public ParseException(string message)
-                : base(message)
+            private readonly string _message;
+
+            public ParseException(ParseExceptionKind kind, Token token, string condition)
             {
+                Condition = condition;
+                Kind = kind;
+                TokenIndex = token.Index;
+                TokenLength = token.Length;
+                string description;
+                // TODO: LOC
+                switch (kind)
+                {
+                    case ParseExceptionKind.ExpectedOpenFunction:
+                        description = "Expected '(' to follow function";
+                        break;
+                    case ParseExceptionKind.ExpectedOpenHashtable:
+                        description = "Expected '[' to follow hashtable";
+                        break;
+                    case ParseExceptionKind.UnclosedFunction:
+                        description = "Unclosed function";
+                        break;
+                    case ParseExceptionKind.UnclosedHashtable:
+                        description = "Unclosed hashtable";
+                        break;
+                    case ParseExceptionKind.UnrecognizedValue:
+                        description = "Unrecognized value";
+                        break;
+                    case ParseExceptionKind.UnexpectedSymbol:
+                        description = "Unexpected symbol";
+                        break;
+                    default: // Should never reach here.
+                        throw new Exception($"Unexpected parse exception kind '{kind}'.");
+                }
+
+                RawToken = condition.Substring(token.Index, token.Length);
+                int position = token.Index + 1;
+                // TODO: loc
+                _message = $"{description}: '{RawToken}'. Located at position {position} within condition expression: {Condition}";
+            }
+
+            public string Condition { get; private set; }
+
+            public ParseExceptionKind Kind { get; private set; }
+
+            public string RawToken { get; private set; }
+
+            public int TokenIndex { get; private set; }
+
+            public int TokenLength { get; private set; }
+
+            public sealed override string Message => _message;
+        }
+
+        public enum ParseExceptionKind
+        {
+            ExpectedOpenFunction,
+            ExpectedOpenHashtable,
+            UnclosedFunction,
+            UnclosedHashtable,
+            UnexpectedSymbol,
+            UnrecognizedValue,
+        }
+
+        public enum ValueKind
+        {
+            Boolean,
+            Number,
+            String,
+            Version,
+        }
+
+        public sealed class ConvertException : Exception
+        {
+            private readonly string _message;
+
+            public ConvertException(object val, ValueKind toKind, Exception inner = null)
+                : base(string.Empty, inner)
+            {
+                Value = val;
+                if (val is bool)
+                {
+                    FromKind = ValueKind.Boolean;
+                }
+                else if (val is decimal)
+                {
+                    FromKind = ValueKind.Number;
+                }
+                else if (val is Version)
+                {
+                    FromKind = ValueKind.Version;
+                }
+                else
+                {
+                    FromKind = ValueKind.String;
+                }
+
+                // TODO: loc
+                _message = $"Unable to convert value '{0}' from type {GetKindString(FromKind)} to type {GetKindString(toKind)}.";
+                if (inner != null)
+                {
+                    _message = string.Concat(_message, " ", inner.Message);
+                }
+            }
+
+            public object Value { get; private set; }
+
+            public ValueKind FromKind { get; private set; }
+
+            public ValueKind ToKind { get; private set; }
+
+            public sealed override string Message => _message;
+
+            private static string GetKindString(ValueKind kind)
+            {
+                // TODO: loc
+                return kind.ToString();
             }
         }
 
@@ -602,6 +502,11 @@ namespace Microsoft.VisualStudio.Services.Agent
                     result = (decimal)val != 0m; // 0 converts to false, otherwise true.
                     TraceValue(result);
                 }
+                else if (val is Version)
+                {
+                    result = true;
+                    TraceValue(result);
+                }
                 else
                 {
                     result = !string.IsNullOrEmpty(val as string);
@@ -625,19 +530,25 @@ namespace Microsoft.VisualStudio.Services.Agent
                     TraceValue(d);
                     return d;
                 }
+                else if (val is Version)
+                {
+                    throw new ConvertException(val, ValueKind.Number);
+                }
 
+                Exception inner = null;
                 try
                 {
-                    return decimal.Parse(
+                    decimal.Parse(
                         val as string ?? string.Empty,
                         NumberStyles,
                         CultureInfo.InvariantCulture);
                 }
                 catch (Exception ex)
                 {
-                    // TODO: loc
-                    throw new Exception($"Unable to convert value '{val}' to a number. {ex.Message}");
+                    inner = ex;
                 }
+
+                throw new ConvertException(val, ValueKind.Number, inner);
             }
 
             public string GetValueAsString()
@@ -653,7 +564,7 @@ namespace Microsoft.VisualStudio.Services.Agent
                     result = string.Format(CultureInfo.InvariantCulture, "{0}", val);
                     TraceValue(result);
                 }
-                else
+                else if (val is decimal)
                 {
                     decimal d = (decimal)val;
                     result = d.ToString("G", CultureInfo.InvariantCulture);
@@ -664,8 +575,47 @@ namespace Microsoft.VisualStudio.Services.Agent
 
                     TraceValue(result);
                 }
+                else
+                {
+                    Version v = val as Version;
+                    result = v.ToString();
+                    TraceValue(result);
+                }
 
                 return result;
+            }
+
+            public Version GetValueAsVersion()
+            {
+                object val = GetValue();
+                if (val is Version)
+                {
+                    return val as Version;
+                }
+
+                Version v;
+                if (TryConvertToVersion(val, out v))
+                {
+                    TraceValue(v);
+                    return v;
+                }
+
+                if (val is bool || val is decimal)
+                {
+                    throw new ConvertException(val, ValueKind.Version);
+                }
+
+                Exception inner = null;
+                try
+                {
+                    Version.Parse(val as string ?? string.Empty);
+                }
+                catch (Exception ex)
+                {
+                    inner = ex;
+                }
+
+                throw new ConvertException(val, ValueKind.Version, inner);
             }
 
             public bool TryGetValueAsNumber(out decimal result)
@@ -683,7 +633,26 @@ namespace Microsoft.VisualStudio.Services.Agent
                     return true;
                 }
 
-                TraceValue(val: null, isUnconverted: false, isNotANumber: true);
+                TraceValue(val: null, isUnconverted: false, conversionFailed: "Unable to convert to Number");
+                return false;
+            }
+
+            public bool TryGetValueAsVersion(out Version result)
+            {
+                object val = GetValue();
+                if (val is Version)
+                {
+                    result = (Version)val;
+                    return true;
+                }
+
+                if (TryConvertToVersion(val, out result))
+                {
+                    TraceValue(result);
+                    return true;
+                }
+
+                TraceValue(val: null, isUnconverted: false, conversionFailed: "Unable to convert to Version");
                 return false;
             }
 
@@ -692,21 +661,33 @@ namespace Microsoft.VisualStudio.Services.Agent
                 _trace.Info(string.Empty.PadLeft(_level * 2, '.') + (message ?? string.Empty));
             }
 
-            protected void TraceValue(object val, bool isUnconverted = false, bool isNotANumber = false)
+            protected void TraceValue(object val, bool isUnconverted = false, string conversionFailed = "")
             {
                 string prefix = isUnconverted ? string.Empty : "=> ";
-                if (isNotANumber)
+                if (!string.IsNullOrEmpty(conversionFailed))
                 {
-                    TraceInfo(StringUtil.Format("{0}NaN", prefix));
+                    TraceInfo(StringUtil.Format("{0}{1}", prefix, conversionFailed));
                 }
-                else if (val is bool || val is decimal)
+
+                ValueKind kind;
+                if (val is bool)
                 {
-                    TraceInfo(StringUtil.Format("{0}{1} ({2})", prefix, val, val.GetType().Name));
+                    kind = ValueKind.Boolean;
+                }
+                else if (val is decimal)
+                {
+                    kind = ValueKind.Number;
+                }
+                else if (val is Version)
+                {
+                    kind = ValueKind.Version;
                 }
                 else
                 {
-                    TraceInfo(StringUtil.Format("{0}{1} (String)", prefix, val));
+                    kind = ValueKind.String;
                 }
+
+                TraceInfo(String.Format(CultureInfo.InvariantCulture, "{0}{1} ({2})", prefix, val, kind));
             }
 
             private bool TryConvertToNumber(object val, out decimal result)
@@ -721,6 +702,11 @@ namespace Microsoft.VisualStudio.Services.Agent
                     result = (decimal)val;
                     return true;
                 }
+                else if (val is Version)
+                {
+                    result = default(decimal);
+                    return false;
+                }
 
                 string s = val as string ?? string.Empty;
                 if (string.IsNullOrEmpty(s))
@@ -734,6 +720,27 @@ namespace Microsoft.VisualStudio.Services.Agent
                     NumberStyles,
                     CultureInfo.InvariantCulture,
                     out result);
+            }
+
+            private bool TryConvertToVersion(object val, out Version result)
+            {
+                if (val is bool)
+                {
+                    result = null;
+                    return false;
+                }
+                else if (val is decimal)
+                {
+                    return Version.TryParse(String.Format(CultureInfo.InvariantCulture, "{0}", val), out result);
+                }
+                else if (val is Version)
+                {
+                    result = val as Version;
+                    return true;
+                }
+
+                string s = val as string ?? string.Empty;
+                return Version.TryParse(s, out result);
             }
         }
 
@@ -788,7 +795,7 @@ namespace Microsoft.VisualStudio.Services.Agent
             }
 
             protected abstract string Name { get; }
-            
+
             protected void TraceName()
             {
                 TraceInfo($"{Name} (Function)");
@@ -802,7 +809,7 @@ namespace Microsoft.VisualStudio.Services.Agent
             {
             }
 
-            protected override string Name => "And";
+            protected sealed override string Name => "And";
 
             public sealed override object GetValue()
             {
@@ -822,14 +829,54 @@ namespace Microsoft.VisualStudio.Services.Agent
             }
         }
 
-        private class EqualFunction : FunctionNode
+        private sealed class ContainsFunction : FunctionNode
+        {
+            public ContainsFunction(Tracing trace, int level)
+                : base(trace, level)
+            {
+            }
+
+            protected sealed override string Name => "Contains";
+
+            public override object GetValue()
+            {
+                TraceName();
+                string left = Parameters[0].GetValueAsString() ?? string.Empty;
+                string right = Parameters[1].GetValueAsString() ?? string.Empty;
+                bool result = left.IndexOf(right, StringComparison.OrdinalIgnoreCase) >= 0;
+                TraceValue(result);
+                return result;
+            }
+        }
+
+        private sealed class EndsWithFunction : FunctionNode
+        {
+            public EndsWithFunction(Tracing trace, int level)
+                : base(trace, level)
+            {
+            }
+
+            protected sealed override string Name => "EndsWith";
+
+            public override object GetValue()
+            {
+                TraceName();
+                string left = Parameters[0].GetValueAsString() ?? string.Empty;
+                string right = Parameters[1].GetValueAsString() ?? string.Empty;
+                bool result = left.EndsWith(right, StringComparison.OrdinalIgnoreCase);
+                TraceValue(result);
+                return result;
+            }
+        }
+
+        private sealed class EqualFunction : FunctionNode
         {
             public EqualFunction(Tracing trace, int level)
                 : base(trace, level)
             {
             }
 
-            protected override string Name => "Equal";
+            protected sealed override string Name => "Equal";
 
             public override object GetValue()
             {
@@ -853,6 +900,18 @@ namespace Microsoft.VisualStudio.Services.Agent
                         result = false;
                     }
                 }
+                else if (left is Version)
+                {
+                    Version right;
+                    if (Parameters[1].TryGetValueAsVersion(out right))
+                    {
+                        result = (Version)left == right;
+                    }
+                    else
+                    {
+                        result = false;
+                    }
+                }
                 else
                 {
                     string right = Parameters[1].GetValueAsString();
@@ -867,16 +926,16 @@ namespace Microsoft.VisualStudio.Services.Agent
             }
         }
 
-        private class GreaterThanFunction : FunctionNode
+        private sealed class GreaterThanFunction : FunctionNode
         {
             public GreaterThanFunction(Tracing trace, int level)
                 : base(trace, level)
             {
             }
 
-            protected override string Name => "GreaterThan";
+            protected sealed override string Name => "GreaterThan";
 
-            public override object GetValue()
+            public sealed override object GetValue()
             {
                 TraceName();
                 bool result;
@@ -884,18 +943,22 @@ namespace Microsoft.VisualStudio.Services.Agent
                 if (left is bool)
                 {
                     bool right = Parameters[1].GetValueAsBool();
-                    result = ((bool)left).CompareTo(right) >= 1;
+                    result = ((bool)left).CompareTo(right) > 0;
                 }
                 else if (left is decimal)
                 {
                     decimal right = Parameters[1].GetValueAsNumber();
-                    result = ((decimal)left).CompareTo(right) >= 1;
+                    result = ((decimal)left).CompareTo(right) > 0;
+                }
+                else if (left is Version)
+                {
+                    Version right = Parameters[1].GetValueAsVersion();
+                    result = (left as Version).CompareTo(right) > 0;
                 }
                 else
                 {
-                    string upperLeft = (left as string ?? string.Empty).ToUpperInvariant();
-                    string upperRight = (Parameters[1].GetValueAsString() ?? string.Empty).ToUpperInvariant();
-                    result = upperLeft.CompareTo(upperRight) >= 1;
+                    string right = Parameters[1].GetValueAsString();
+                    result = string.Compare(left as string ?? string.Empty, right ?? string.Empty, StringComparison.OrdinalIgnoreCase) > 0;
                 }
 
                 TraceValue(result);
@@ -903,16 +966,16 @@ namespace Microsoft.VisualStudio.Services.Agent
             }
         }
 
-        private class GreaterThanOrEqualFunction : FunctionNode
+        private sealed class GreaterThanOrEqualFunction : FunctionNode
         {
             public GreaterThanOrEqualFunction(Tracing trace, int level)
                 : base(trace, level)
             {
             }
 
-            protected override string Name => "GreaterThanOrEqual";
+            protected sealed override string Name => "GreaterThanOrEqual";
 
-            public override object GetValue()
+            public sealed override object GetValue()
             {
                 TraceName();
                 bool result;
@@ -927,11 +990,15 @@ namespace Microsoft.VisualStudio.Services.Agent
                     decimal right = Parameters[1].GetValueAsNumber();
                     result = ((decimal)left).CompareTo(right) >= 0;
                 }
+                else if (left is Version)
+                {
+                    Version right = Parameters[1].GetValueAsVersion();
+                    result = (left as Version).CompareTo(right) >= 0;
+                }
                 else
                 {
-                    string upperLeft = (left as string ?? string.Empty).ToUpperInvariant();
-                    string upperRight = (Parameters[1].GetValueAsString() ?? string.Empty).ToUpperInvariant();
-                    result = upperLeft.CompareTo(upperRight) >= 0;
+                    string right = Parameters[1].GetValueAsString();
+                    result = string.Compare(left as string ?? string.Empty, right ?? string.Empty, StringComparison.OrdinalIgnoreCase) >= 0;
                 }
 
                 TraceValue(result);
@@ -939,52 +1006,203 @@ namespace Microsoft.VisualStudio.Services.Agent
             }
         }
 
-        private sealed class LessThanFunction : GreaterThanOrEqualFunction
+        private sealed class InFunction : FunctionNode
+        {
+            public InFunction(Tracing trace, int level)
+                : base(trace, level)
+            {
+            }
+
+            protected sealed override string Name => "In";
+
+            public override object GetValue()
+            {
+                TraceName();
+                bool result = false;
+                object left = Parameters[0].GetValue();
+                for (int i = 1; i < Parameters.Count; i++)
+                {
+                    if (left is bool)
+                    {
+                        bool right = Parameters[i].GetValueAsBool();
+                        result = (bool)left == right;
+                    }
+                    else if (left is decimal)
+                    {
+                        decimal right;
+                        if (Parameters[i].TryGetValueAsNumber(out right))
+                        {
+                            result = (decimal)left == right;
+                        }
+                        else
+                        {
+                            result = false;
+                        }
+                    }
+                    else if (left is Version)
+                    {
+                        Version right;
+                        if (Parameters[i].TryGetValueAsVersion(out right))
+                        {
+                            result = (Version)left == right;
+                        }
+                        else
+                        {
+                            result = false;
+                        }
+                    }
+                    else
+                    {
+                        string right = Parameters[i].GetValueAsString();
+                        result = string.Equals(
+                            left as string ?? string.Empty,
+                            right ?? string.Empty,
+                            StringComparison.OrdinalIgnoreCase);
+                    }
+
+                    if (result)
+                    {
+                        break;
+                    }
+                }
+
+                TraceValue(result);
+                return result;
+            }
+        }
+
+        private sealed class LessThanFunction : FunctionNode
         {
             public LessThanFunction(Tracing trace, int level)
                 : base(trace, level)
             {
             }
 
-            protected override string Name => "LessThan";
+            protected sealed override string Name => "LessThan";
 
             public sealed override object GetValue()
             {
-                bool result = !(bool)base.GetValue();
+                TraceName();
+                bool result;
+                object left = Parameters[0].GetValue();
+                if (left is bool)
+                {
+                    bool right = Parameters[1].GetValueAsBool();
+                    result = ((bool)left).CompareTo(right) < 0;
+                }
+                else if (left is decimal)
+                {
+                    decimal right = Parameters[1].GetValueAsNumber();
+                    result = ((decimal)left).CompareTo(right) < 0;
+                }
+                else if (left is Version)
+                {
+                    Version right = Parameters[1].GetValueAsVersion();
+                    result = (left as Version).CompareTo(right) < 0;
+                }
+                else
+                {
+                    string right = Parameters[1].GetValueAsString();
+                    result = string.Compare(left as string ?? string.Empty, right ?? string.Empty, StringComparison.OrdinalIgnoreCase) < 0;
+                }
+
                 TraceValue(result);
                 return result;
             }
         }
 
-        private sealed class LessThanOrEqualFunction : GreaterThanFunction
+        private sealed class LessThanOrEqualFunction : FunctionNode
         {
             public LessThanOrEqualFunction(Tracing trace, int level)
                 : base(trace, level)
             {
             }
 
-            protected override string Name => "LessThanOrEqual";
+            protected sealed override string Name => "LessThanOrEqual";
 
             public sealed override object GetValue()
             {
-                bool result = !(bool)base.GetValue();
+                TraceName();
+                bool result;
+                object left = Parameters[0].GetValue();
+                if (left is bool)
+                {
+                    bool right = Parameters[1].GetValueAsBool();
+                    result = ((bool)left).CompareTo(right) <= 0;
+                }
+                else if (left is decimal)
+                {
+                    decimal right = Parameters[1].GetValueAsNumber();
+                    result = ((decimal)left).CompareTo(right) <= 0;
+                }
+                else if (left is Version)
+                {
+                    Version right = Parameters[1].GetValueAsVersion();
+                    result = (left as Version).CompareTo(right) <= 0;
+                }
+                else
+                {
+                    string right = Parameters[1].GetValueAsString();
+                    result = string.Compare(left as string ?? string.Empty, right ?? string.Empty, StringComparison.OrdinalIgnoreCase) <= 0;
+                }
+
                 TraceValue(result);
                 return result;
             }
         }
 
-        private sealed class NotEqualFunction : EqualFunction
+        private sealed class NotEqualFunction : FunctionNode
         {
             public NotEqualFunction(Tracing trace, int level)
                 : base(trace, level)
             {
             }
 
-            protected override string Name => "NotEqual";
+            protected sealed override string Name => "NotEqual";
 
             public sealed override object GetValue()
             {
-                bool result = !(bool)base.GetValue();
+                TraceName();
+                bool result;
+                object left = Parameters[0].GetValue();
+                if (left is bool)
+                {
+                    bool right = Parameters[1].GetValueAsBool();
+                    result = (bool)left != right;
+                }
+                else if (left is decimal)
+                {
+                    decimal right;
+                    if (Parameters[1].TryGetValueAsNumber(out right))
+                    {
+                        result = (decimal)left != right;
+                    }
+                    else
+                    {
+                        result = true;
+                    }
+                }
+                else if (left is Version)
+                {
+                    Version right;
+                    if (Parameters[1].TryGetValueAsVersion(out right))
+                    {
+                        result = (Version)left != right;
+                    }
+                    else
+                    {
+                        result = true;
+                    }
+                }
+                else
+                {
+                    string right = Parameters[1].GetValueAsString();
+                    result = !string.Equals(
+                        left as string ?? string.Empty,
+                        right ?? string.Empty,
+                        StringComparison.OrdinalIgnoreCase);
+                }
+
                 TraceValue(result);
                 return result;
             }
@@ -997,12 +1215,78 @@ namespace Microsoft.VisualStudio.Services.Agent
             {
             }
 
-            protected override string Name => "Not";
+            protected sealed override string Name => "Not";
 
             public sealed override object GetValue()
             {
                 TraceName();
                 bool result = !Parameters[0].GetValueAsBool();
+                TraceValue(result);
+                return result;
+            }
+        }
+
+        private sealed class NotInFunction : FunctionNode
+        {
+            public NotInFunction(Tracing trace, int level)
+                : base(trace, level)
+            {
+            }
+
+            protected sealed override string Name => "NotIn";
+
+            public sealed override object GetValue()
+            {
+                TraceName();
+                bool found = false;
+                object left = Parameters[0].GetValue();
+                for (int i = 1; i < Parameters.Count; i++)
+                {
+                    if (left is bool)
+                    {
+                        bool right = Parameters[i].GetValueAsBool();
+                        found = (bool)left == right;
+                    }
+                    else if (left is decimal)
+                    {
+                        decimal right;
+                        if (Parameters[i].TryGetValueAsNumber(out right))
+                        {
+                            found = (decimal)left == right;
+                        }
+                        else
+                        {
+                            found = false;
+                        }
+                    }
+                    else if (left is Version)
+                    {
+                        Version right;
+                        if (Parameters[i].TryGetValueAsVersion(out right))
+                        {
+                            found = (Version)left == right;
+                        }
+                        else
+                        {
+                            found = false;
+                        }
+                    }
+                    else
+                    {
+                        string right = Parameters[i].GetValueAsString();
+                        found = string.Equals(
+                            left as string ?? string.Empty,
+                            right ?? string.Empty,
+                            StringComparison.OrdinalIgnoreCase);
+                    }
+
+                    if (found)
+                    {
+                        break;
+                    }
+                }
+
+                bool result = !found;
                 TraceValue(result);
                 return result;
             }
@@ -1015,7 +1299,7 @@ namespace Microsoft.VisualStudio.Services.Agent
             {
             }
 
-            protected override string Name => "Or";
+            protected sealed override string Name => "Or";
 
             public sealed override object GetValue()
             {
@@ -1035,6 +1319,26 @@ namespace Microsoft.VisualStudio.Services.Agent
             }
         }
 
+        private sealed class StartsWithFunction : FunctionNode
+        {
+            public StartsWithFunction(Tracing trace, int level)
+                : base(trace, level)
+            {
+            }
+
+            protected sealed override string Name => "StartsWith";
+
+            public override object GetValue()
+            {
+                TraceName();
+                string left = Parameters[0].GetValueAsString() ?? string.Empty;
+                string right = Parameters[1].GetValueAsString() ?? string.Empty;
+                bool result = left.StartsWith(right, StringComparison.OrdinalIgnoreCase);
+                TraceValue(result);
+                return result;
+            }
+        }
+
         private sealed class XorFunction : FunctionNode
         {
             public XorFunction(Tracing trace, int level)
@@ -1042,7 +1346,7 @@ namespace Microsoft.VisualStudio.Services.Agent
             {
             }
 
-            protected override string Name => "Xor";
+            protected sealed override string Name => "Xor";
 
             public sealed override object GetValue()
             {
