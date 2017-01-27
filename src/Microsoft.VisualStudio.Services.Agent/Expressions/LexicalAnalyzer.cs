@@ -2,11 +2,23 @@
 using System.Globalization;
 using System.Text;
 
-namespace Microsoft.VisualStudio.Services.Agent
+namespace Microsoft.VisualStudio.Services.Agent.Expressions
 {
-    public sealed partial class Condition
+    internal sealed class LexicalAnalyzer
     {
-        private Token GetNextToken()
+        private readonly IHostContext _context;
+        private readonly string _raw; // Raw condition string.
+        private readonly Tracing _trace;
+        private int _index; // Index of raw condition string.
+
+        public LexicalAnalyzer(IHostContext context, string expression)
+        {
+            _context = context;
+            _raw = expression;
+            _trace = _context.GetTrace(nameof(LexicalAnalyzer));
+        }
+
+        public Token GetNextToken()
         {
             // Skip whitespace.
             while (_index < _raw.Length && char.IsWhiteSpace(_raw[_index]))
@@ -215,60 +227,6 @@ namespace Microsoft.VisualStudio.Services.Agent
                 default:
                     return char.IsWhiteSpace(c);
             }
-        }
-
-        public sealed class Token
-        {
-            public Token(TokenKind kind, int index, int length = 1, object parsedValue = null)
-            {
-                Kind = kind;
-                Index = index;
-                Length = length;
-                ParsedValue = parsedValue;
-            }
-
-            public TokenKind Kind { get; }
-
-            public int Index { get; }
-
-            public int Length { get; }
-
-            public object ParsedValue { get; }
-        }
-
-        public enum TokenKind
-        {
-            // Punctuation
-            CloseHashtable,
-            CloseFunction,
-            OpenHashtable,
-            OpenFunction,
-            Separator,
-
-            // Literal value types
-            True,
-            False,
-            Number,
-            Version,
-            String,
-
-            // Functions
-            And,
-            Equal,
-            GreaterThan,
-            GreaterThanOrEqual,
-            LessThan,
-            LessThanOrEqual,
-            Not,
-            NotEqual,
-            Or,
-            Xor,
-
-            // Hashtables
-            Capabilities,
-            Variables,
-
-            Unrecognized,
         }
     }
 }

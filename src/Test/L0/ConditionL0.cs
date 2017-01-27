@@ -1,3 +1,4 @@
+using Microsoft.VisualStudio.Services.Agent.Expressions;
 using Xunit;
 
 namespace Microsoft.VisualStudio.Services.Agent.Tests
@@ -14,10 +15,10 @@ namespace Microsoft.VisualStudio.Services.Agent.Tests
         {
             using (var hc = new TestHostContext(this))
             {
-                Assert.Equal(true, new Condition(hc, "true").Result);
-                Assert.Equal(true, new Condition(hc, "TRUE").Result);
-                Assert.Equal(false, new Condition(hc, "false").Result);
-                Assert.Equal(false, new Condition(hc, "FALSE").Result);
+                Assert.Equal(true, EvaluateCondition(hc, "true"));
+                Assert.Equal(true, EvaluateCondition(hc, "TRUE"));
+                Assert.Equal(false, EvaluateCondition(hc, "false"));
+                Assert.Equal(false, EvaluateCondition(hc, "FALSE"));
             }
         }
 
@@ -28,18 +29,18 @@ namespace Microsoft.VisualStudio.Services.Agent.Tests
         {
             using (var hc = new TestHostContext(this))
             {
-                Assert.Equal(true, new Condition(hc, "1").Result);
-                Assert.Equal(true, new Condition(hc, ".5").Result);
-                Assert.Equal(true, new Condition(hc, "0.5").Result);
-                Assert.Equal(true, new Condition(hc, "2").Result);
-                Assert.Equal(true, new Condition(hc, "-1").Result);
-                Assert.Equal(true, new Condition(hc, "-.5").Result);
-                Assert.Equal(true, new Condition(hc, "-0.5").Result);
-                Assert.Equal(true, new Condition(hc, "-2").Result);
-                Assert.Equal(false, new Condition(hc, "0").Result);
-                Assert.Equal(false, new Condition(hc, "0.0").Result);
-                Assert.Equal(false, new Condition(hc, "-0").Result);
-                Assert.Equal(false, new Condition(hc, "-0.0").Result);
+                Assert.Equal(true, EvaluateCondition(hc, "1"));
+                Assert.Equal(true, EvaluateCondition(hc, ".5"));
+                Assert.Equal(true, EvaluateCondition(hc, "0.5"));
+                Assert.Equal(true, EvaluateCondition(hc, "2"));
+                Assert.Equal(true, EvaluateCondition(hc, "-1"));
+                Assert.Equal(true, EvaluateCondition(hc, "-.5"));
+                Assert.Equal(true, EvaluateCondition(hc, "-0.5"));
+                Assert.Equal(true, EvaluateCondition(hc, "-2"));
+                Assert.Equal(false, EvaluateCondition(hc, "0"));
+                Assert.Equal(false, EvaluateCondition(hc, "0.0"));
+                Assert.Equal(false, EvaluateCondition(hc, "-0"));
+                Assert.Equal(false, EvaluateCondition(hc, "-0.0"));
             }
         }
 
@@ -50,11 +51,11 @@ namespace Microsoft.VisualStudio.Services.Agent.Tests
         {
             using (var hc = new TestHostContext(this))
             {
-                Assert.Equal(true, new Condition(hc, "'a'").Result);
-                Assert.Equal(true, new Condition(hc, "'false'").Result);
-                Assert.Equal(true, new Condition(hc, "'0'").Result);
-                Assert.Equal(true, new Condition(hc, "' '").Result);
-                Assert.Equal(false, new Condition(hc, "''").Result);
+                Assert.Equal(true, EvaluateCondition(hc, "'a'"));
+                Assert.Equal(true, EvaluateCondition(hc, "'false'"));
+                Assert.Equal(true, EvaluateCondition(hc, "'0'"));
+                Assert.Equal(true, EvaluateCondition(hc, "' '"));
+                Assert.Equal(false, EvaluateCondition(hc, "''"));
             }
         }
 
@@ -65,9 +66,9 @@ namespace Microsoft.VisualStudio.Services.Agent.Tests
         {
             using (var hc = new TestHostContext(this))
             {
-                Assert.Equal(true, new Condition(hc, "1.2.3").Result);
-                Assert.Equal(true, new Condition(hc, "1.2.3.4").Result);
-                Assert.Equal(true, new Condition(hc, "0.0.0").Result);
+                Assert.Equal(true, EvaluateCondition(hc, "1.2.3"));
+                Assert.Equal(true, EvaluateCondition(hc, "1.2.3.4"));
+                Assert.Equal(true, EvaluateCondition(hc, "0.0.0"));
             }
         }
 
@@ -81,18 +82,18 @@ namespace Microsoft.VisualStudio.Services.Agent.Tests
         {
             using (var hc = new TestHostContext(this))
             {
-                Assert.Equal(true, new Condition(hc, "and(true, true, true)").Result); // bool
-                Assert.Equal(true, new Condition(hc, "and(true, true)").Result);
-                Assert.Equal(false, new Condition(hc, "and(true, true, false)").Result);
-                Assert.Equal(false, new Condition(hc, "and(true, false)").Result);
-                Assert.Equal(false, new Condition(hc, "and(false, true)").Result);
-                Assert.Equal(false, new Condition(hc, "and(false, false)").Result);
-                Assert.Equal(true, new Condition(hc, "and(true, 1)").Result); // number
-                Assert.Equal(false, new Condition(hc, "and(true, 0)").Result);
-                Assert.Equal(true, new Condition(hc, "and(true, 'a')").Result); // string
-                Assert.Equal(false, new Condition(hc, "and(true, '')").Result);
-                Assert.Equal(true, new Condition(hc, "and(true, 0.0.0.0)").Result); // version
-                Assert.Equal(true, new Condition(hc, "and(true, 1.2.3.4)").Result);
+                Assert.Equal(true, EvaluateCondition(hc, "and(true, true, true)")); // bool
+                Assert.Equal(true, EvaluateCondition(hc, "and(true, true)"));
+                Assert.Equal(false, EvaluateCondition(hc, "and(true, true, false)"));
+                Assert.Equal(false, EvaluateCondition(hc, "and(true, false)"));
+                Assert.Equal(false, EvaluateCondition(hc, "and(false, true)"));
+                Assert.Equal(false, EvaluateCondition(hc, "and(false, false)"));
+                Assert.Equal(true, EvaluateCondition(hc, "and(true, 1)")); // number
+                Assert.Equal(false, EvaluateCondition(hc, "and(true, 0)"));
+                Assert.Equal(true, EvaluateCondition(hc, "and(true, 'a')")); // string
+                Assert.Equal(false, EvaluateCondition(hc, "and(true, '')"));
+                Assert.Equal(true, EvaluateCondition(hc, "and(true, 0.0.0.0)")); // version
+                Assert.Equal(true, EvaluateCondition(hc, "and(true, 1.2.3.4)"));
             }
         }
 
@@ -105,7 +106,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Tests
             {
                 // The gt function should never evaluate. It would would throw since 'not a number'
                 // cannot be converted to a number.
-                Assert.Equal(false, new Condition(hc, "and(false, gt(1, 'not a number'))").Result);
+                Assert.Equal(false, EvaluateCondition(hc, "and(false, gt(1, 'not a number'))"));
             }
         }
 
@@ -116,16 +117,16 @@ namespace Microsoft.VisualStudio.Services.Agent.Tests
         {
             using (var hc = new TestHostContext(this))
             {
-                Assert.Equal(true, new Condition(hc, "eq(true, true)").Result); // bool
-                Assert.Equal(true, new Condition(hc, "eq(false, false)").Result);
-                Assert.Equal(false, new Condition(hc, "eq(false, true)").Result);
-                Assert.Equal(true, new Condition(hc, "eq(2, 2)").Result); // number
-                Assert.Equal(false, new Condition(hc, "eq(1, 2)").Result);
-                Assert.Equal(true, new Condition(hc, "eq('abcDEF', 'ABCdef')").Result); // string
-                Assert.Equal(false, new Condition(hc, "eq('a', 'b')").Result);
-                Assert.Equal(true, new Condition(hc, "eq(1.2.3, 1.2.3)").Result); // version
-                Assert.Equal(false, new Condition(hc, "eq(1.2.3, 1.2.3.0)").Result);
-                Assert.Equal(false, new Condition(hc, "eq(1.2.3, 4.5.6)").Result);
+                Assert.Equal(true, EvaluateCondition(hc, "eq(true, true)")); // bool
+                Assert.Equal(true, EvaluateCondition(hc, "eq(false, false)"));
+                Assert.Equal(false, EvaluateCondition(hc, "eq(false, true)"));
+                Assert.Equal(true, EvaluateCondition(hc, "eq(2, 2)")); // number
+                Assert.Equal(false, EvaluateCondition(hc, "eq(1, 2)"));
+                Assert.Equal(true, EvaluateCondition(hc, "eq('abcDEF', 'ABCdef')")); // string
+                Assert.Equal(false, EvaluateCondition(hc, "eq('a', 'b')"));
+                Assert.Equal(true, EvaluateCondition(hc, "eq(1.2.3, 1.2.3)")); // version
+                Assert.Equal(false, EvaluateCondition(hc, "eq(1.2.3, 1.2.3.0)"));
+                Assert.Equal(false, EvaluateCondition(hc, "eq(1.2.3, 4.5.6)"));
             }
         }
 
@@ -137,38 +138,38 @@ namespace Microsoft.VisualStudio.Services.Agent.Tests
             using (var hc = new TestHostContext(this))
             {
                 // Cast to bool.
-                Assert.Equal(true, new Condition(hc, "eq(true, 2)").Result); // number
-                Assert.Equal(true, new Condition(hc, "eq(false, 0)").Result);
-                Assert.Equal(true, new Condition(hc, "eq(true, 'a')").Result); // string
-                Assert.Equal(true, new Condition(hc, "eq(true, ' ')").Result);
-                Assert.Equal(true, new Condition(hc, "eq(false, '')").Result);
-                Assert.Equal(true, new Condition(hc, "eq(true, 1.2.3)").Result); // version
-                Assert.Equal(true, new Condition(hc, "eq(true, 0.0.0)").Result);
+                Assert.Equal(true, EvaluateCondition(hc, "eq(true, 2)")); // number
+                Assert.Equal(true, EvaluateCondition(hc, "eq(false, 0)"));
+                Assert.Equal(true, EvaluateCondition(hc, "eq(true, 'a')")); // string
+                Assert.Equal(true, EvaluateCondition(hc, "eq(true, ' ')"));
+                Assert.Equal(true, EvaluateCondition(hc, "eq(false, '')"));
+                Assert.Equal(true, EvaluateCondition(hc, "eq(true, 1.2.3)")); // version
+                Assert.Equal(true, EvaluateCondition(hc, "eq(true, 0.0.0)"));
 
                 // Cast to string.
-                Assert.Equal(true, new Condition(hc, "eq('TRue', true)").Result); // bool
-                Assert.Equal(true, new Condition(hc, "eq('FALse', false)").Result);
-                Assert.Equal(true, new Condition(hc, "eq('123456.789', 123456.789)").Result); // number
-                Assert.Equal(false, new Condition(hc, "eq('123456.000', 123456.000)").Result);
-                Assert.Equal(true, new Condition(hc, "eq('1.2.3', 1.2.3)").Result); // version
+                Assert.Equal(true, EvaluateCondition(hc, "eq('TRue', true)")); // bool
+                Assert.Equal(true, EvaluateCondition(hc, "eq('FALse', false)"));
+                Assert.Equal(true, EvaluateCondition(hc, "eq('123456.789', 123456.789)")); // number
+                Assert.Equal(false, EvaluateCondition(hc, "eq('123456.000', 123456.000)"));
+                Assert.Equal(true, EvaluateCondition(hc, "eq('1.2.3', 1.2.3)")); // version
 
                 // Cast to number (best effort).
-                Assert.Equal(true, new Condition(hc, "eq(1, true)").Result); // bool
-                Assert.Equal(true, new Condition(hc, "eq(0, false)").Result);
-                Assert.Equal(false, new Condition(hc, "eq(2, true)").Result);
-                Assert.Equal(true, new Condition(hc, "eq(123456.789, ' +123,456.7890 ')").Result); // string
-                Assert.Equal(true, new Condition(hc, "eq(-123456.789, ' -123,456.7890 ')").Result);
-                Assert.Equal(true, new Condition(hc, "eq(123000, ' 123,000.000 ')").Result);
-                Assert.Equal(false, new Condition(hc, "eq(1, 'not a number')").Result);
-                Assert.Equal(false, new Condition(hc, "eq(0, 'not a number')").Result);
-                Assert.Equal(false, new Condition(hc, "eq(1.2, 1.2.0.0)").Result); // version
+                Assert.Equal(true, EvaluateCondition(hc, "eq(1, true)")); // bool
+                Assert.Equal(true, EvaluateCondition(hc, "eq(0, false)"));
+                Assert.Equal(false, EvaluateCondition(hc, "eq(2, true)"));
+                Assert.Equal(true, EvaluateCondition(hc, "eq(123456.789, ' +123,456.7890 ')")); // string
+                Assert.Equal(true, EvaluateCondition(hc, "eq(-123456.789, ' -123,456.7890 ')"));
+                Assert.Equal(true, EvaluateCondition(hc, "eq(123000, ' 123,000.000 ')"));
+                Assert.Equal(false, EvaluateCondition(hc, "eq(1, 'not a number')"));
+                Assert.Equal(false, EvaluateCondition(hc, "eq(0, 'not a number')"));
+                Assert.Equal(false, EvaluateCondition(hc, "eq(1.2, 1.2.0.0)")); // version
 
                 // Cast to version (best effort).
-                Assert.Equal(false, new Condition(hc, "eq(1.2.3, false)").Result); // bool
-                Assert.Equal(false, new Condition(hc, "eq(1.2.3, true)").Result);
-                Assert.Equal(false, new Condition(hc, "eq(1.2.0, 1.2)").Result); // number
-                Assert.Equal(true, new Condition(hc, "eq(1.2.0, ' 1.2.0 ')").Result); // string
-                Assert.Equal(false, new Condition(hc, "eq(1.2.0, '1.2')").Result);
+                Assert.Equal(false, EvaluateCondition(hc, "eq(1.2.3, false)")); // bool
+                Assert.Equal(false, EvaluateCondition(hc, "eq(1.2.3, true)"));
+                Assert.Equal(false, EvaluateCondition(hc, "eq(1.2.0, 1.2)")); // number
+                Assert.Equal(true, EvaluateCondition(hc, "eq(1.2.0, ' 1.2.0 ')")); // string
+                Assert.Equal(false, EvaluateCondition(hc, "eq(1.2.0, '1.2')"));
             }
         }
 
@@ -179,18 +180,18 @@ namespace Microsoft.VisualStudio.Services.Agent.Tests
         {
             using (var hc = new TestHostContext(this))
             {
-                Assert.Equal(true, new Condition(hc, "gt(true, false)").Result); // bool
-                Assert.Equal(false, new Condition(hc, "gt(true, true)").Result);
-                Assert.Equal(false, new Condition(hc, "gt(false, true)").Result);
-                Assert.Equal(false, new Condition(hc, "gt(false, false)").Result);
-                Assert.Equal(true, new Condition(hc, "gt(2, 1)").Result); // number
-                Assert.Equal(false, new Condition(hc, "gt(1, 2)").Result);
-                Assert.Equal(true, new Condition(hc, "gt('DEF', 'abc')").Result); // string
-                Assert.Equal(true, new Condition(hc, "gt('def', 'ABC')").Result);
-                Assert.Equal(false, new Condition(hc, "gt('a', 'b')").Result);
-                Assert.Equal(true, new Condition(hc, "gt(4.5.6, 1.2.3)").Result); // version
-                Assert.Equal(false, new Condition(hc, "gt(1.2.3, 4.5.6)").Result);
-                Assert.Equal(false, new Condition(hc, "gt(1.2.3, 1.2.3)").Result);
+                Assert.Equal(true, EvaluateCondition(hc, "gt(true, false)")); // bool
+                Assert.Equal(false, EvaluateCondition(hc, "gt(true, true)"));
+                Assert.Equal(false, EvaluateCondition(hc, "gt(false, true)"));
+                Assert.Equal(false, EvaluateCondition(hc, "gt(false, false)"));
+                Assert.Equal(true, EvaluateCondition(hc, "gt(2, 1)")); // number
+                Assert.Equal(false, EvaluateCondition(hc, "gt(1, 2)"));
+                Assert.Equal(true, EvaluateCondition(hc, "gt('DEF', 'abc')")); // string
+                Assert.Equal(true, EvaluateCondition(hc, "gt('def', 'ABC')"));
+                Assert.Equal(false, EvaluateCondition(hc, "gt('a', 'b')"));
+                Assert.Equal(true, EvaluateCondition(hc, "gt(4.5.6, 1.2.3)")); // version
+                Assert.Equal(false, EvaluateCondition(hc, "gt(1.2.3, 4.5.6)"));
+                Assert.Equal(false, EvaluateCondition(hc, "gt(1.2.3, 1.2.3)"));
             }
         }
 
@@ -201,13 +202,13 @@ namespace Microsoft.VisualStudio.Services.Agent.Tests
         {
             using (var hc = new TestHostContext(this))
             {
-                Assert.Equal(true, new Condition(hc, "not(false)").Result); // bool
-                Assert.Equal(false, new Condition(hc, "not(true)").Result);
-                Assert.Equal(true, new Condition(hc, "not(0)").Result); // number
-                Assert.Equal(false, new Condition(hc, "not(1)").Result);
-                Assert.Equal(true, new Condition(hc, "not('')").Result); // string
-                Assert.Equal(false, new Condition(hc, "not('a')").Result);
-                Assert.Equal(false, new Condition(hc, "not(' ')").Result);
+                Assert.Equal(true, EvaluateCondition(hc, "not(false)")); // bool
+                Assert.Equal(false, EvaluateCondition(hc, "not(true)"));
+                Assert.Equal(true, EvaluateCondition(hc, "not(0)")); // number
+                Assert.Equal(false, EvaluateCondition(hc, "not(1)"));
+                Assert.Equal(true, EvaluateCondition(hc, "not('')")); // string
+                Assert.Equal(false, EvaluateCondition(hc, "not('a')"));
+                Assert.Equal(false, EvaluateCondition(hc, "not(' ')"));
             }
         }
 
@@ -218,17 +219,17 @@ namespace Microsoft.VisualStudio.Services.Agent.Tests
         {
             using (var hc = new TestHostContext(this))
             {
-                Assert.Equal(true, new Condition(hc, "ne(false, true)").Result); // bool
-                Assert.Equal(true, new Condition(hc, "ne(true, false)").Result);
-                Assert.Equal(false, new Condition(hc, "ne(false, false)").Result);
-                Assert.Equal(false, new Condition(hc, "ne(true, true)").Result);
-                Assert.Equal(true, new Condition(hc, "ne(1, 2)").Result); // number
-                Assert.Equal(false, new Condition(hc, "ne(2, 2)").Result);
-                Assert.Equal(true, new Condition(hc, "ne('abc', 'def')").Result); // string
-                Assert.Equal(false, new Condition(hc, "ne('abcDEF', 'ABCdef')").Result);
-                Assert.Equal(true, new Condition(hc, "ne(1.2.3, 1.2.3.0)").Result); // version
-                Assert.Equal(true, new Condition(hc, "ne(1.2.3, 4.5.6)").Result);
-                Assert.Equal(false, new Condition(hc, "ne(1.2.3, 1.2.3)").Result);
+                Assert.Equal(true, EvaluateCondition(hc, "ne(false, true)")); // bool
+                Assert.Equal(true, EvaluateCondition(hc, "ne(true, false)"));
+                Assert.Equal(false, EvaluateCondition(hc, "ne(false, false)"));
+                Assert.Equal(false, EvaluateCondition(hc, "ne(true, true)"));
+                Assert.Equal(true, EvaluateCondition(hc, "ne(1, 2)")); // number
+                Assert.Equal(false, EvaluateCondition(hc, "ne(2, 2)"));
+                Assert.Equal(true, EvaluateCondition(hc, "ne('abc', 'def')")); // string
+                Assert.Equal(false, EvaluateCondition(hc, "ne('abcDEF', 'ABCdef')"));
+                Assert.Equal(true, EvaluateCondition(hc, "ne(1.2.3, 1.2.3.0)")); // version
+                Assert.Equal(true, EvaluateCondition(hc, "ne(1.2.3, 4.5.6)"));
+                Assert.Equal(false, EvaluateCondition(hc, "ne(1.2.3, 1.2.3)"));
             }
         }
 
@@ -240,39 +241,39 @@ namespace Microsoft.VisualStudio.Services.Agent.Tests
             using (var hc = new TestHostContext(this))
             {
                 // Cast to bool.
-                Assert.Equal(true, new Condition(hc, "ne(false, 2)").Result); // number
-                Assert.Equal(true, new Condition(hc, "ne(true, 0)").Result);
-                Assert.Equal(true, new Condition(hc, "ne(false, 'a')").Result); // string
-                Assert.Equal(true, new Condition(hc, "ne(false, ' ')").Result);
-                Assert.Equal(true, new Condition(hc, "ne(true, '')").Result);
-                Assert.Equal(true, new Condition(hc, "ne(false, 1.2.3)").Result); // version
-                Assert.Equal(true, new Condition(hc, "ne(false, 0.0.0)").Result);
+                Assert.Equal(true, EvaluateCondition(hc, "ne(false, 2)")); // number
+                Assert.Equal(true, EvaluateCondition(hc, "ne(true, 0)"));
+                Assert.Equal(true, EvaluateCondition(hc, "ne(false, 'a')")); // string
+                Assert.Equal(true, EvaluateCondition(hc, "ne(false, ' ')"));
+                Assert.Equal(true, EvaluateCondition(hc, "ne(true, '')"));
+                Assert.Equal(true, EvaluateCondition(hc, "ne(false, 1.2.3)")); // version
+                Assert.Equal(true, EvaluateCondition(hc, "ne(false, 0.0.0)"));
 
                 // Cast to string.
-                Assert.Equal(false, new Condition(hc, "ne('TRue', true)").Result); // bool
-                Assert.Equal(false, new Condition(hc, "ne('FALse', false)").Result);
-                Assert.Equal(true, new Condition(hc, "ne('123456.000', 123456.000)").Result); // number
-                Assert.Equal(false, new Condition(hc, "ne('123456.789', 123456.789)").Result);
-                Assert.Equal(true, new Condition(hc, "ne('1.2.3.0', 1.2.3)").Result); // version
-                Assert.Equal(false, new Condition(hc, "ne('1.2.3', 1.2.3)").Result);
+                Assert.Equal(false, EvaluateCondition(hc, "ne('TRue', true)")); // bool
+                Assert.Equal(false, EvaluateCondition(hc, "ne('FALse', false)"));
+                Assert.Equal(true, EvaluateCondition(hc, "ne('123456.000', 123456.000)")); // number
+                Assert.Equal(false, EvaluateCondition(hc, "ne('123456.789', 123456.789)"));
+                Assert.Equal(true, EvaluateCondition(hc, "ne('1.2.3.0', 1.2.3)")); // version
+                Assert.Equal(false, EvaluateCondition(hc, "ne('1.2.3', 1.2.3)"));
 
                 // Cast to number (best effort).
-                Assert.Equal(true, new Condition(hc, "ne(2, true)").Result); // bool
-                Assert.Equal(false, new Condition(hc, "ne(1, true)").Result);
-                Assert.Equal(false, new Condition(hc, "ne(0, false)").Result);
-                Assert.Equal(false, new Condition(hc, "ne(123456.789, ' +123,456.7890 ')").Result); // string
-                Assert.Equal(false, new Condition(hc, "ne(-123456.789, ' -123,456.7890 ')").Result);
-                Assert.Equal(false, new Condition(hc, "ne(123000, ' 123,000.000 ')").Result);
-                Assert.Equal(true, new Condition(hc, "ne(1, 'not a number')").Result);
-                Assert.Equal(true, new Condition(hc, "ne(0, 'not a number')").Result);
-                Assert.Equal(true, new Condition(hc, "ne(1.2, 1.2.0.0)").Result); // version
+                Assert.Equal(true, EvaluateCondition(hc, "ne(2, true)")); // bool
+                Assert.Equal(false, EvaluateCondition(hc, "ne(1, true)"));
+                Assert.Equal(false, EvaluateCondition(hc, "ne(0, false)"));
+                Assert.Equal(false, EvaluateCondition(hc, "ne(123456.789, ' +123,456.7890 ')")); // string
+                Assert.Equal(false, EvaluateCondition(hc, "ne(-123456.789, ' -123,456.7890 ')"));
+                Assert.Equal(false, EvaluateCondition(hc, "ne(123000, ' 123,000.000 ')"));
+                Assert.Equal(true, EvaluateCondition(hc, "ne(1, 'not a number')"));
+                Assert.Equal(true, EvaluateCondition(hc, "ne(0, 'not a number')"));
+                Assert.Equal(true, EvaluateCondition(hc, "ne(1.2, 1.2.0.0)")); // version
 
                 // Cast to version (best effort).
-                Assert.Equal(true, new Condition(hc, "ne(1.2.3, false)").Result); // bool
-                Assert.Equal(true, new Condition(hc, "ne(1.2.3, true)").Result);
-                Assert.Equal(true, new Condition(hc, "ne(1.2.0, 1.2)").Result); // number
-                Assert.Equal(false, new Condition(hc, "ne(1.2.0, ' 1.2.0 ')").Result); // string
-                Assert.Equal(true, new Condition(hc, "ne(1.2.0, '1.2')").Result);
+                Assert.Equal(true, EvaluateCondition(hc, "ne(1.2.3, false)")); // bool
+                Assert.Equal(true, EvaluateCondition(hc, "ne(1.2.3, true)"));
+                Assert.Equal(true, EvaluateCondition(hc, "ne(1.2.0, 1.2)")); // number
+                Assert.Equal(false, EvaluateCondition(hc, "ne(1.2.0, ' 1.2.0 ')")); // string
+                Assert.Equal(true, EvaluateCondition(hc, "ne(1.2.0, '1.2')"));
             }
         }
 
@@ -283,16 +284,16 @@ namespace Microsoft.VisualStudio.Services.Agent.Tests
         {
             using (var hc = new TestHostContext(this))
             {
-                Assert.Equal(true, new Condition(hc, "or(false, false, true)").Result); // bool
-                Assert.Equal(true, new Condition(hc, "or(false, true, false)").Result);
-                Assert.Equal(true, new Condition(hc, "or(true, false, false)").Result);
-                Assert.Equal(false, new Condition(hc, "or(false, false, false)").Result);
-                Assert.Equal(true, new Condition(hc, "or(false, 1)").Result); // number
-                Assert.Equal(false, new Condition(hc, "or(false, 0)").Result);
-                Assert.Equal(true, new Condition(hc, "or(false, 'a')").Result); // string
-                Assert.Equal(false, new Condition(hc, "or(false, '')").Result);
-                Assert.Equal(true, new Condition(hc, "or(false, 1.2.3)").Result); // version
-                Assert.Equal(true, new Condition(hc, "or(false, 0.0.0)").Result);
+                Assert.Equal(true, EvaluateCondition(hc, "or(false, false, true)")); // bool
+                Assert.Equal(true, EvaluateCondition(hc, "or(false, true, false)"));
+                Assert.Equal(true, EvaluateCondition(hc, "or(true, false, false)"));
+                Assert.Equal(false, EvaluateCondition(hc, "or(false, false, false)"));
+                Assert.Equal(true, EvaluateCondition(hc, "or(false, 1)")); // number
+                Assert.Equal(false, EvaluateCondition(hc, "or(false, 0)"));
+                Assert.Equal(true, EvaluateCondition(hc, "or(false, 'a')")); // string
+                Assert.Equal(false, EvaluateCondition(hc, "or(false, '')"));
+                Assert.Equal(true, EvaluateCondition(hc, "or(false, 1.2.3)")); // version
+                Assert.Equal(true, EvaluateCondition(hc, "or(false, 0.0.0)"));
             }
         }
 
@@ -305,7 +306,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Tests
             {
                 // The gt function should never evaluate. It would would throw since 'not a number'
                 // cannot be converted to a number.
-                Assert.Equal(true, new Condition(hc, "or(true, gt(1, 'not a number'))").Result);
+                Assert.Equal(true, EvaluateCondition(hc, "or(true, gt(1, 'not a number'))"));
             }
         }
 
@@ -321,11 +322,11 @@ namespace Microsoft.VisualStudio.Services.Agent.Tests
             {
                 try
                 {
-                    new Condition(hc, "eq(1.2, 3.4a)");
+                    EvaluateCondition(hc, "eq(1.2, 3.4a)");
                 }
-                catch (Condition.ParseException ex)
+                catch (ParseException ex)
                 {
-                    Assert.Equal(Condition.ParseExceptionKind.UnrecognizedValue, ex.Kind);
+                    Assert.Equal(ParseExceptionKind.UnrecognizedValue, ex.Kind);
                     Assert.Equal("3.4a", ex.RawToken);
                 }
             }
@@ -340,11 +341,11 @@ namespace Microsoft.VisualStudio.Services.Agent.Tests
             {
                 try
                 {
-                    new Condition(hc, "eq(1.2.3, 4.5.6.7a)");
+                    EvaluateCondition(hc, "eq(1.2.3, 4.5.6.7a)");
                 }
-                catch (Condition.ParseException ex)
+                catch (ParseException ex)
                 {
-                    Assert.Equal(Condition.ParseExceptionKind.UnrecognizedValue, ex.Kind);
+                    Assert.Equal(ParseExceptionKind.UnrecognizedValue, ex.Kind);
                     Assert.Equal("4.5.6.7a", ex.RawToken);
                 }
             }
@@ -359,11 +360,11 @@ namespace Microsoft.VisualStudio.Services.Agent.Tests
             {
                 try
                 {
-                    new Condition(hc, "eq('hello', 'unterminated-string)");
+                    EvaluateCondition(hc, "eq('hello', 'unterminated-string)");
                 }
-                catch (Condition.ParseException ex)
+                catch (ParseException ex)
                 {
-                    Assert.Equal(Condition.ParseExceptionKind.UnrecognizedValue, ex.Kind);
+                    Assert.Equal(ParseExceptionKind.UnrecognizedValue, ex.Kind);
                     Assert.Equal("'unterminated-string)", ex.RawToken);
                 }
             }
@@ -378,11 +379,11 @@ namespace Microsoft.VisualStudio.Services.Agent.Tests
             {
                 try
                 {
-                    new Condition(hc, "eq(1,2");
+                    EvaluateCondition(hc, "eq(1,2");
                 }
-                catch (Condition.ParseException ex)
+                catch (ParseException ex)
                 {
-                    Assert.Equal(Condition.ParseExceptionKind.UnclosedFunction, ex.Kind);
+                    Assert.Equal(ParseExceptionKind.UnclosedFunction, ex.Kind);
                     Assert.Equal("eq", ex.RawToken);
                 }
             }
@@ -397,14 +398,20 @@ namespace Microsoft.VisualStudio.Services.Agent.Tests
             {
                 try
                 {
-                    new Condition(hc, "not(eq 1,2)");
+                    EvaluateCondition(hc, "not(eq 1,2)");
                 }
-                catch (Condition.ParseException ex)
+                catch (ParseException ex)
                 {
-                    Assert.Equal(Condition.ParseExceptionKind.ExpectedOpenFunction, ex.Kind);
+                    Assert.Equal(ParseExceptionKind.ExpectedOpenFunction, ex.Kind);
                     Assert.Equal("eq", ex.RawToken);
                 }
             }
+        }
+
+        private static bool EvaluateCondition(IHostContext context, string condition)
+        {
+            var expressionManager = new ExpressionManager(context);
+            return expressionManager.EvaluateCondition(condition);
         }
     }
 }
