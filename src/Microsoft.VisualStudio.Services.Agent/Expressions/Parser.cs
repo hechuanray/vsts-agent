@@ -120,8 +120,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
                         break;
 
                     // Literal values
-                    case TokenKind.False:
-                    case TokenKind.True:
+                    case TokenKind.Boolean:
                     case TokenKind.Number:
                     case TokenKind.Version:
                     case TokenKind.String:

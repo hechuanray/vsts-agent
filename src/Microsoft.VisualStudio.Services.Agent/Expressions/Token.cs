@@ -24,15 +24,15 @@
     public enum TokenKind
     {
         // Punctuation
-        CloseHashtable,
-        CloseFunction,
-        OpenHashtable,
-        OpenFunction,
+        StartIndex,
+        StartParameter,
+        EndIndex,
+        EndParameter,
         Separator,
+        Dereference,
 
         // Literal value types
-        True,
-        False,
+        Boolean,
         Number,
         Version,
         String,
@@ -49,9 +49,8 @@
         Or,
         Xor,
 
-        // Hashtables
-        Capabilities,
-        Variables,
+        // Extensions
+        ExtensionObject,
 
         Unrecognized,
     }

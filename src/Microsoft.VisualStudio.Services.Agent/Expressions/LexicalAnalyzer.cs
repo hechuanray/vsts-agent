@@ -1,16 +1,18 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
-using System.Text;
+using System.Text.RegularExpressions;
 
 namespace Microsoft.VisualStudio.Services.Agent.Expressions
 {
     internal sealed class LexicalAnalyzer
     {
+        private static readonly Regex s_keywordRegex = new Regex("^[a-zA-Z_][a-zA-Z0-9_]*$", RegexOptions.None);
         private readonly string _raw; // Raw expression string.
         private readonly ITraceWriter _trace;
         private readonly IDictionary<string, object> _extensionObjects;
         private int _index; // Index of raw condition string.
+        private Token _lastToken;
 
         public LexicalAnalyzer(string expression, ITraceWriter trace, IDictionary<string, object> extensionObjects)
         {
@@ -37,28 +39,45 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
 
             // Read the first character to determine the type of token.
             char c = _raw[_index];
+            Token token;
             switch (c)
             {
-                case Constants.Conditions.CloseHashtable:
-                    return new Token(TokenKind.CloseHashtable, _index++);
-                case Constants.Conditions.CloseFunction:
-                    return new Token(TokenKind.CloseFunction, _index++);
-                case Constants.Conditions.OpenHashtable:
-                    return new Token(TokenKind.OpenHashtable, _index++);
-                case Constants.Conditions.OpenFunction:
-                    return new Token(TokenKind.OpenFunction, _index++);
-                case Constants.Conditions.Separator:
-                    return new Token(TokenKind.Separator, _index++);
+                case Constants.StartIndex:
+                    token = new Token(TokenKind.StartIndex, _index++);
+                    break;
+                case Constants.StartParameter:
+                    token = new Token(TokenKind.StartParameter, _index++);
+                    break;
+                case Constants.EndIndex:
+                    token = new Token(TokenKind.EndIndex, _index++);
+                    break;
+                case Constants.EndParameter:
+                    token = new Token(TokenKind.EndParameter, _index++);
+                    break;
+                case Constants.Separator:
+                    token = new Token(TokenKind.Separator, _index++);
+                    break;
+                case Constants.Dereference:
+                    token = new Token(TokenKind.Dereference, _index++);
+                    break;
                 case '\'':
-                    return ReadStringToken();
+                    token = ReadStringToken();
+                    break;
                 default:
                     if (c == '-' || c == '.' || (c >= '0' && c <= '9'))
                     {
-                        return ReadNumberOrVersionToken();
+                        token = ReadNumberOrVersionToken();
+                    }
+                    else
+                    {
+                        token = ReadKeywordToken();
                     }
 
-                    return ReadKeywordToken();
+                    break;
             }
+
+            _lastToken = token;
+            return token;
         }
 
         private Token ReadNumberOrVersionToken()
@@ -74,7 +93,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
 
                 _index++;
             }
-            while (_index < _raw.Length && !TestWhitespaceOrPunctuation(_raw[_index]));
+            while (_index < _raw.Length && (!TestWhitespaceOrPunctuation(_raw[_index]) || _raw[_index] == '.'));
 
             int length = _index - startIndex;
             string str = _raw.Substring(startIndex, length);
@@ -113,64 +132,72 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
                 _index++;
             }
 
-            // Convert to token.
             int length = _index - startIndex;
             string str = _raw.Substring(startIndex, length);
+            if (s_keywordRegex.IsMatch(str))
+            {
+                if (_lastToken != null && _lastToken.Kind == TokenKind.Dereference)
+                {
+                    return new Token(TokenKind.PropertyName, startIndex, length, str);
+                }
+            }
+
+            // Convert to token.
             if (str.Equals(bool.TrueString, StringComparison.OrdinalIgnoreCase))
             {
-                return new Token(TokenKind.True, startIndex, length, true);
+                return new Token(TokenKind.Boolean, startIndex, length, true);
             }
             else if (str.Equals(bool.FalseString, StringComparison.OrdinalIgnoreCase))
             {
-                return new Token(TokenKind.False, startIndex, length, false);
+                return new Token(TokenKind.Boolean, startIndex, length, false);
             }
             // Functions
-            else if (str.Equals(Constants.Conditions.And, StringComparison.OrdinalIgnoreCase))
+            else if (str.Equals(Constants.And, StringComparison.OrdinalIgnoreCase))
             {
                 return new Token(TokenKind.And, startIndex, length);
             }
-            else if (str.Equals(Constants.Conditions.Equal, StringComparison.OrdinalIgnoreCase))
+            else if (str.Equals(Constants.Equal, StringComparison.OrdinalIgnoreCase))
             {
                 return new Token(TokenKind.Equal, startIndex, length);
             }
-            else if (str.Equals(Constants.Conditions.GreaterThan, StringComparison.OrdinalIgnoreCase))
+            else if (str.Equals(Constants.GreaterThan, StringComparison.OrdinalIgnoreCase))
             {
                 return new Token(TokenKind.GreaterThan, startIndex, length);
             }
-            else if (str.Equals(Constants.Conditions.GreaterThanOrEqual, StringComparison.OrdinalIgnoreCase))
+            else if (str.Equals(Constants.GreaterThanOrEqual, StringComparison.OrdinalIgnoreCase))
             {
                 return new Token(TokenKind.GreaterThanOrEqual, startIndex, length);
             }
-            else if (str.Equals(Constants.Conditions.LessThan, StringComparison.OrdinalIgnoreCase))
+            else if (str.Equals(Constants.LessThan, StringComparison.OrdinalIgnoreCase))
             {
                 return new Token(TokenKind.LessThan, startIndex, length);
             }
-            else if (str.Equals(Constants.Conditions.LessThanOrEqual, StringComparison.OrdinalIgnoreCase))
+            else if (str.Equals(Constants.LessThanOrEqual, StringComparison.OrdinalIgnoreCase))
             {
                 return new Token(TokenKind.LessThanOrEqual, startIndex, length);
             }
-            else if (str.Equals(Constants.Conditions.Not, StringComparison.OrdinalIgnoreCase))
+            else if (str.Equals(Constants.Not, StringComparison.OrdinalIgnoreCase))
             {
                 return new Token(TokenKind.Not, startIndex, length);
             }
-            else if (str.Equals(Constants.Conditions.NotEqual, StringComparison.OrdinalIgnoreCase))
+            else if (str.Equals(Constants.NotEqual, StringComparison.OrdinalIgnoreCase))
             {
                 return new Token(TokenKind.NotEqual, startIndex, length);
             }
-            else if (str.Equals(Constants.Conditions.Or, StringComparison.OrdinalIgnoreCase))
+            else if (str.Equals(Constants.Or, StringComparison.OrdinalIgnoreCase))
             {
                 return new Token(TokenKind.Or, startIndex, length);
             }
-            else if (str.Equals(Constants.Conditions.Xor, StringComparison.OrdinalIgnoreCase))
+            else if (str.Equals(Constants.Xor, StringComparison.OrdinalIgnoreCase))
             {
                 return new Token(TokenKind.Xor, startIndex, length);
             }
             // Hashtables
-            else if (str.Equals(Constants.Conditions.Capabilities, StringComparison.OrdinalIgnoreCase))
+            else if (str.Equals(Constants.Capabilities, StringComparison.OrdinalIgnoreCase))
             {
                 return new Token(TokenKind.Capabilities, startIndex, length);
             }
-            else if (str.Equals(Constants.Conditions.Variables, StringComparison.OrdinalIgnoreCase))
+            else if (str.Equals(Constants.Variables, StringComparison.OrdinalIgnoreCase))
             {
                 return new Token(TokenKind.Variables, startIndex, length);
             }
@@ -221,11 +248,12 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
         {
             switch (c)
             {
-                case Constants.Conditions.CloseFunction:
-                case Constants.Conditions.CloseHashtable:
-                case Constants.Conditions.OpenFunction:
-                case Constants.Conditions.OpenHashtable:
-                case Constants.Conditions.Separator:
+                case Constants.StartIndex:
+                case Constants.StartParameter:
+                case Constants.EndIndex:
+                case Constants.EndParameter:
+                case Constants.Separator:
+                case Constants.Dereference:
                     return true;
                 default:
                     return char.IsWhiteSpace(c);
