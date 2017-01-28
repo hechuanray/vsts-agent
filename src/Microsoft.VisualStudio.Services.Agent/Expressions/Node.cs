@@ -13,10 +13,10 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
             NumberStyles.AllowLeadingWhite |
             NumberStyles.AllowThousands |
             NumberStyles.AllowTrailingWhite;
-        private readonly Tracing _trace;
+        private readonly ITraceWriter _trace;
         private readonly int _level;
 
-        public Node(Tracing trace, int level)
+        public Node(ITraceWriter trace, int level)
         {
             _trace = trace;
             _level = level;
@@ -283,7 +283,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
 
     internal abstract class ContainerNode : Node
     {
-        public ContainerNode(Tracing trace, int level)
+        public ContainerNode(ITraceWriter trace, int level)
             : base(trace, level)
         {
         }
@@ -303,7 +303,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
     {
         private readonly object _value;
 
-        public LiteralValueNode(object value, Tracing trace, int level)
+        public LiteralValueNode(object value, ITraceWriter trace, int level)
             : base(trace, level)
         {
             _value = value;
@@ -318,7 +318,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
 
     internal abstract class HashtableNode : ContainerNode
     {
-        public HashtableNode(Tracing trace, int level)
+        public HashtableNode(ITraceWriter trace, int level)
             : base(trace, level)
         {
         }
@@ -326,7 +326,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
 
     internal abstract class FunctionNode : ContainerNode
     {
-        public FunctionNode(Tracing trace, int level)
+        public FunctionNode(ITraceWriter trace, int level)
             : base(trace, level)
         {
         }
@@ -341,7 +341,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
 
     internal sealed class AndFunction : FunctionNode
     {
-        public AndFunction(Tracing trace, int level)
+        public AndFunction(ITraceWriter trace, int level)
             : base(trace, level)
         {
         }
@@ -368,7 +368,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
 
     internal sealed class ContainsFunction : FunctionNode
     {
-        public ContainsFunction(Tracing trace, int level)
+        public ContainsFunction(ITraceWriter trace, int level)
             : base(trace, level)
         {
         }
@@ -388,7 +388,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
 
     internal sealed class EndsWithFunction : FunctionNode
     {
-        public EndsWithFunction(Tracing trace, int level)
+        public EndsWithFunction(ITraceWriter trace, int level)
             : base(trace, level)
         {
         }
@@ -408,7 +408,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
 
     internal sealed class EqualFunction : FunctionNode
     {
-        public EqualFunction(Tracing trace, int level)
+        public EqualFunction(ITraceWriter trace, int level)
             : base(trace, level)
         {
         }
@@ -465,7 +465,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
 
     internal sealed class GreaterThanFunction : FunctionNode
     {
-        public GreaterThanFunction(Tracing trace, int level)
+        public GreaterThanFunction(ITraceWriter trace, int level)
             : base(trace, level)
         {
         }
@@ -505,7 +505,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
 
     internal sealed class GreaterThanOrEqualFunction : FunctionNode
     {
-        public GreaterThanOrEqualFunction(Tracing trace, int level)
+        public GreaterThanOrEqualFunction(ITraceWriter trace, int level)
             : base(trace, level)
         {
         }
@@ -545,7 +545,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
 
     internal sealed class InFunction : FunctionNode
     {
-        public InFunction(Tracing trace, int level)
+        public InFunction(ITraceWriter trace, int level)
             : base(trace, level)
         {
         }
@@ -610,7 +610,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
 
     internal sealed class LessThanFunction : FunctionNode
     {
-        public LessThanFunction(Tracing trace, int level)
+        public LessThanFunction(ITraceWriter trace, int level)
             : base(trace, level)
         {
         }
@@ -650,7 +650,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
 
     internal sealed class LessThanOrEqualFunction : FunctionNode
     {
-        public LessThanOrEqualFunction(Tracing trace, int level)
+        public LessThanOrEqualFunction(ITraceWriter trace, int level)
             : base(trace, level)
         {
         }
@@ -690,7 +690,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
 
     internal sealed class NotEqualFunction : FunctionNode
     {
-        public NotEqualFunction(Tracing trace, int level)
+        public NotEqualFunction(ITraceWriter trace, int level)
             : base(trace, level)
         {
         }
@@ -747,7 +747,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
 
     internal sealed class NotFunction : FunctionNode
     {
-        public NotFunction(Tracing trace, int level)
+        public NotFunction(ITraceWriter trace, int level)
             : base(trace, level)
         {
         }
@@ -765,7 +765,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
 
     internal sealed class NotInFunction : FunctionNode
     {
-        public NotInFunction(Tracing trace, int level)
+        public NotInFunction(ITraceWriter trace, int level)
             : base(trace, level)
         {
         }
@@ -831,7 +831,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
 
     internal sealed class OrFunction : FunctionNode
     {
-        public OrFunction(Tracing trace, int level)
+        public OrFunction(ITraceWriter trace, int level)
             : base(trace, level)
         {
         }
@@ -858,7 +858,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
 
     internal sealed class StartsWithFunction : FunctionNode
     {
-        public StartsWithFunction(Tracing trace, int level)
+        public StartsWithFunction(ITraceWriter trace, int level)
             : base(trace, level)
         {
         }
@@ -878,7 +878,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
 
     internal sealed class XorFunction : FunctionNode
     {
-        public XorFunction(Tracing trace, int level)
+        public XorFunction(ITraceWriter trace, int level)
             : base(trace, level)
         {
         }

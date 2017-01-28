@@ -6,16 +6,14 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
 {
     internal sealed class LexicalAnalyzer
     {
-        private readonly IHostContext _context;
-        private readonly string _raw; // Raw condition string.
-        private readonly Tracing _trace;
+        private readonly string _raw; // Raw expression string.
+        private readonly ITraceWriter _trace;
         private int _index; // Index of raw condition string.
 
-        public LexicalAnalyzer(IHostContext context, string expression)
+        public LexicalAnalyzer(string expression, ITraceWriter trace)
         {
-            _context = context;
             _raw = expression;
-            _trace = _context.GetTrace(nameof(LexicalAnalyzer));
+            _trace = trace;
         }
 
         public Token GetNextToken()

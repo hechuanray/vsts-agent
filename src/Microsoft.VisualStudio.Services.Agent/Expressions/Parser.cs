@@ -6,16 +6,14 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
     internal sealed class Parser
     {
         private readonly LexicalAnalyzer _lexer;
-        private readonly IHostContext _context;
-        private readonly string _raw; // Raw condition string.
-        private readonly Tracing _trace;
+        private readonly string _raw; // Raw expression string.
+        private readonly ITraceWriter _trace;
 
-        public Parser(IHostContext context, string expression)
+        public Parser(string expression, ITraceWriter trace)
         {
-            _context = context;
             _raw = expression;
-            _trace = _context.GetTrace(nameof(Parser));
-            _lexer = new LexicalAnalyzer(context, expression);
+            _trace = trace;
+            _lexer = new LexicalAnalyzer(expression, trace);
             CreateTree();
         }
 
@@ -23,7 +21,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
 
         private void CreateTree()
         {
-            _trace.Entering();
+            _trace.Verbose($"Entering {nameof(CreateTree)}");
             var containers = new Stack<ContainerInfo>();
             Token token = null;
             Token lastToken = null;

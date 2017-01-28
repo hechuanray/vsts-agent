@@ -2,24 +2,28 @@
 {
     public sealed class ExpressionManager
     {
-        private readonly IHostContext _context;
-        private readonly Tracing _trace;
+        private readonly ITraceWriter _trace;
 
-        public ExpressionManager(IHostContext context)
+        public ExpressionManager(ITraceWriter traceWriter)
         {
-            ArgUtil.NotNull(context, nameof(context));
-            _context = context;
-            _trace = _context.GetTrace(nameof(ExpressionManager));
+            ArgUtil.NotNull(traceWriter, nameof(traceWriter));
+            _trace = traceWriter;
         }
 
         public bool EvaluateCondition(string condition)
         {
-            _trace.Entering();
-            var parser = new Parser(_context, condition);
+            _trace.Verbose($"Entering {nameof(EvaluateCondition)}");
+            var parser = new Parser(condition, _trace);
             Node root = parser.Root;
             bool result = root != null ? root.GetValueAsBool() : true;
-            _trace.Info($"Result: {result}");
+            _trace.Info($"Condition result: {result}");
             return result;
         }
+    }
+
+    public interface ITraceWriter
+    {
+        void Info(string message);
+        void Verbose(string message);
     }
 }

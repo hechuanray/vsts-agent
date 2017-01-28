@@ -410,8 +410,30 @@ namespace Microsoft.VisualStudio.Services.Agent.Tests
 
         private static bool EvaluateCondition(IHostContext context, string condition)
         {
-            var expressionManager = new ExpressionManager(context);
+            var expressionManager = new ExpressionManager(new TraceWriter(context));
             return expressionManager.EvaluateCondition(condition);
+        }
+
+        private sealed class TraceWriter : ITraceWriter
+        {
+            private readonly IHostContext _context;
+            private readonly Tracing _trace;
+
+            public TraceWriter(IHostContext context)
+            {
+                _context = context;
+                _trace = context.GetTrace("ExpressionManager");
+            }
+
+            public void Info(string message)
+            {
+                _trace.Info(message);
+            }
+
+            public void Verbose(string message)
+            {
+                _trace.Verbose(message);
+            }
         }
     }
 }
