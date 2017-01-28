@@ -9,11 +9,13 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
         private readonly string _raw; // Raw expression string.
         private readonly ITraceWriter _trace;
 
-        public Parser(string expression, ITraceWriter trace)
+        public Parser(string expression, ITraceWriter trace, IDictionary<string, object> extensionObjects)
         {
+            ArgUtil.NotNull(trace, nameof(trace));
+            ArgUtil.NotNull(extensionObjects, nameof(extensionObjects));
             _raw = expression;
             _trace = trace;
-            _lexer = new LexicalAnalyzer(expression, trace);
+            _lexer = new LexicalAnalyzer(expression, trace, extensionObjects);
             CreateTree();
         }
 

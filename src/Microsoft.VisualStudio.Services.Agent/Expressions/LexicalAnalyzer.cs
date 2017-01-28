@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.Text;
 
@@ -8,12 +9,16 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
     {
         private readonly string _raw; // Raw expression string.
         private readonly ITraceWriter _trace;
+        private readonly IDictionary<string, object> _extensionObjects;
         private int _index; // Index of raw condition string.
 
-        public LexicalAnalyzer(string expression, ITraceWriter trace)
+        public LexicalAnalyzer(string expression, ITraceWriter trace, IDictionary<string, object> extensionObjects)
         {
+            ArgUtil.NotNull(trace, nameof(trace));
+            ArgUtil.NotNull(extensionObjects, nameof(extensionObjects));
             _raw = expression;
             _trace = trace;
+            _extensionObjects = extensionObjects;
         }
 
         public Token GetNextToken()
