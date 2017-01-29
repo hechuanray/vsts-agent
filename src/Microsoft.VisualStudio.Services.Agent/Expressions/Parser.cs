@@ -71,28 +71,18 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
                     case TokenKind.Unrecognized:
                         throw new ParseException(ParseExceptionKind.UnrecognizedValue, _token, _raw);
 
-                    // Punctuation
+                    // Expected punctuation
                     case TokenKind.StartIndex:
                         HandleStartIndex();
                         break;
-                    case TokenKind.StartParameter:
-                        HandleStartParameter();
-                        // throw new ParseException(ParseExceptionKind.UnexpectedSymbol, token, _raw);
-                        // ValidateStartParameter();
-                        break;
                     case TokenKind.EndIndex:
                         HandleEndIndex();
-                        // ValidateEndIndex();
-                        // containers.Pop();
                         break;
                     case TokenKind.EndParameter:
                         HandleEndParameter();
-                        // ValidateEndParameter();
-                        // containers.Pop();
                         break;
                     case TokenKind.Separator:
                         HandleSeparator();
-                        // ValidateSeparator();
                         break;
                     case TokenKind.Dereference:
                         HandleDereference();
@@ -163,6 +153,10 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
                         // }
 
                         break;
+                    case TokenKind.PropertyName:
+                    case TokenKind.StartParameter:
+                    default:
+                        throw new ParseException(ParseExceptionKind.UnexpectedSymbol, _token, _raw);
                 }
             }
 
@@ -255,40 +249,31 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
             indexer.AddParameter(new LiteralValueNode(propertyName, _trace));
         }
 
-        // private void ValidateStartParameter(Stack<ContainerInfo> containers, Token token, Token lastToken)
-        // {
-        //     ContainerInfo container = containers.Count > 0 ? containers.Peek() : null;
-        //     //                                          // Validate:
-        //     if (container == null ||                    // 1) Container is not null
-        //         !(container.Node is FunctionNode) ||    // 2) Container is a function
-        //         container.Token != lastToken)           // 3) Container is the last token
-        //     {
-        //         throw new ParseException(ParseExceptionKind.UnexpectedSymbol, token, _raw);
-        //     }
-        // }
-
-        private void ValidateEndParameter(Stack<ContainerInfo> containers, Token token, Token lastToken)
+        private void HandleEndParameter()
         {
-            ContainerInfo container = containers.Count > 0 ? containers.Peek() : null;      // Validate:
+            ContainerInfo container = _containers.Count > 0 ? _containers.Peek() : null;    // Validate:
             if (container == null ||                                                        // 1) Container is not null
                 !(container.Node is FunctionNode) ||                                        // 2) Container is a function
-                container.Node.Parameters.Count < GetMinParamCount(container.Token.Kind) || // 3) At or above min parameters threshold
-                lastToken.Kind == TokenKind.Separator)                                      // 4) Last token is not a separator
+                container.Node.Parameters.Count < GetMinParamCount(container.Token.Kind) || // 3) Not below min param threshold
+                _lastToken.Kind == TokenKind.Separator)                                     // 4) Last token is not a separator
             {
-                throw new ParseException(ParseExceptionKind.UnexpectedSymbol, token, _raw);
+                throw new ParseException(ParseExceptionKind.UnexpectedSymbol, _token, _raw);
             }
+
+            _containers.Pop();
         }
 
-        private void ValidateEndIndex(Stack<ContainerInfo> containers, Token token, Token lastToken)
+        private void HandleEndIndex()
         {
-            ContainerInfo container = containers.Count > 0 ? containers.Peek() : null;
-            //                                          // Validate:
-            if (container == null ||                    // 1) Container is not null
-                !(container.Node is HashtableNode) ||   // 2) Container is a hashtable
-                container.Node.Parameters.Count != 1)   // 3) Exactly 1 parameter
+            IndexerNode indexer = _containers.Count > 0 ? _containers.Peek().Node as IndexerNode : null;
+            //                                  // Validate:
+            if (indexer == null ||              // 1) Container is an indexer
+                indexer.Parameters.Count != 2)  // 2) Exactly 2 parameters
             {
-                throw new ParseException(ParseExceptionKind.UnexpectedSymbol, token, _raw);
+                throw new ParseException(ParseExceptionKind.UnexpectedSymbol, _token, _raw);
             }
+
+            _containers.Pop();
         }
 
         private void ValidateLiteral(Token token, Token lastToken)
@@ -311,16 +296,16 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
             }
         }
 
-        private void ValidateSeparator(Stack<ContainerInfo> containers, Token token, Token lastToken)
+        private void HandleSeparator()
         {
-            ContainerInfo container = containers.Count > 0 ? containers.Peek() : null;          // Validate:
+            ContainerInfo container = _containers.Count > 0 ? _containers.Peek() : null;        // Validate:
             if (container == null ||                                                            // 1) Container is not null
                 !(container.Node is FunctionNode) ||                                            // 2) Container is a function
                 container.Node.Parameters.Count < 1 ||                                          // 3) At least one parameter
                 container.Node.Parameters.Count >= GetMaxParamCount(container.Token.Kind) ||    // 4) Under max parameters threshold
-                lastToken.Kind == TokenKind.Separator)                                          // 5) Last token is not a separator
+                _lastToken.Kind == TokenKind.Separator)                                         // 5) Last token is not a separator
             {
-                throw new ParseException(ParseExceptionKind.UnexpectedSymbol, token, _raw);
+                throw new ParseException(ParseExceptionKind.UnexpectedSymbol, _token, _raw);
             }
         }
 
@@ -386,7 +371,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
             _containers.Push(new ContainerInfo() { Node = node, Token = _token });
 
             // Validate '(' follows.
-            if (!TryGetNextToken || _token.Kind != TokenKind.StartParameter)
+            if (!TryGetNextToken() || _token.Kind != TokenKind.StartParameter)
             {
                 throw new ParseException(ParseExceptionKind.ExpectedStartParameter, _lastToken, _raw);
             }
