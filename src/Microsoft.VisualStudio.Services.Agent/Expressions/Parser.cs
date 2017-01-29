@@ -33,10 +33,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
             {
                 switch (_token.Kind)
                 {
-                    case TokenKind.Unrecognized:
-                        throw new ParseException(ParseExceptionKind.UnrecognizedValue, _token, _raw);
-
-                    // Expected punctuation
+                    // Punctuation
                     case TokenKind.StartIndex:
                         HandleStartIndex();
                         break;
@@ -67,59 +64,22 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
                         HandleFunction();
                         break;
 
-                    // // Objects
-                    // case TokenKind.Object:
-                    //     HandleObject();
-                    //     // // Update the tree.
-                    //     // newNode = CreateExtensionObject(token, containers.Count);
-                    //     // if (Root == null)
-                    //     // {
-                    //     //     Root = newNode;
-                    //     // }
-                    //     // else
-                    //     // {
-                    //     //     containers.Peek().Node.AddParameter(newNode);
-                    //     // }
-
-                    //     // // Push the container.
-                    //     // containers.Push(new ContainerInfo() { Node = newNode as ContainerNode, Token = token });
-
-                    //     // // StartIndex or Dereference should follow.
-                    //     // lastToken = token;
-                    //     // if (_lexer.TryGetNextToken(ref token))
-                    //     // {
-                    //     //     TraceToken(token, containers.Count);
-                    //     // }
-
-                    //     // if (token == null || token.Kind != TokenKind.OpenHashtable)
-                    //     // {
-                    //     //     throw new ParseException(ParseExceptionKind.ExpectedOpenHashtable, lastToken, _raw);
-                    //     // }
-
-                    //     break;
-
-                    // Value types
+                    // Leaf values
                     case TokenKind.Boolean:
                     case TokenKind.Number:
                     case TokenKind.Version:
                     case TokenKind.String:
-                    case TokenKind.Object:
+                    case TokenKind.ExtensionObject:
                         HandleValue();
-                        // ValidateLiteral(token, lastToken);
-
-                        // // Update the tree.
-                        // newNode = new LiteralValueNode(token.ParsedValue, _trace, containers.Count);
-                        // if (Root == null)
-                        // {
-                        //     Root = newNode;
-                        // }
-                        // else
-                        // {
-                        //     containers.Peek().Node.AddParameter(newNode);
-                        // }
                         break;
-                    case TokenKind.PropertyName:
-                    case TokenKind.StartParameter:
+
+                    // Malformed
+                    case TokenKind.Unrecognized:
+                        throw new ParseException(ParseExceptionKind.UnrecognizedValue, _token, _raw);
+
+                    // Unexpected
+                    case TokenKind.PropertyName:    // PropertyName should never reach here.
+                    case TokenKind.StartParameter:  // StartParameter is only expected by HandleFunction.
                     default:
                         throw new ParseException(ParseExceptionKind.UnexpectedSymbol, _token, _raw);
                 }
@@ -148,16 +108,20 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
                 string indent = string.Empty.PadRight(_containers.Count * 2, '.');
                 switch (_token.Kind)
                 {
+                    // Literal values
                     case TokenKind.Boolean:
                     case TokenKind.Number:
                     case TokenKind.Version:
                     case TokenKind.String:
-                    case TokenKind.Object:
                         _trace.Verbose($"{indent}{_token.Kind} '{_token.ParsedValue}'");
                         break;
+                    // Named or unrecognized
+                    case TokenKind.ExtensionObject:
+                    case TokenKind.PropertyName:
                     case TokenKind.Unrecognized:
                         _trace.Verbose($"{indent}{_token.Kind} '{_raw.Substring(_token.Index, _token.Length)}'");
                         break;
+                    // Punctuation
                     case TokenKind.StartIndex:
                     case TokenKind.StartParameter:
                     case TokenKind.EndIndex:
@@ -166,6 +130,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
                     case TokenKind.Dereference:
                         _trace.Verbose($"{indent}{_raw.Substring(_token.Index, 1)}");
                         break;
+                    // Functions
                     default:
                         _trace.Verbose($"{indent}{_token.Kind}");
                         break;
@@ -179,9 +144,9 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
 
         private void HandleStartIndex()
         {
-            // Validate follows an object, property name, or "]".
+            // Validate follows an extension object, property name, or "]".
             if (_lastToken == null ||
-                (_lastToken.Kind != TokenKind.Object && _lastToken.Kind != TokenKind.PropertyName && _lastToken.Kind != TokenKind.EndIndex))
+                (_lastToken.Kind != TokenKind.ExtensionObject && _lastToken.Kind != TokenKind.PropertyName && _lastToken.Kind != TokenKind.EndIndex))
             {
                 throw new ParseException(ParseExceptionKind.UnexpectedSymbol, _token, _raw);
             }
@@ -210,9 +175,9 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
 
         private void HandleDereference()
         {
-            // Validate follows an object, property name, or "]".
+            // Validate follows an extension object, property name, or "]".
             if (_lastToken == null ||
-                (_lastToken.Kind != TokenKind.Object && _lastToken.Kind != TokenKind.PropertyName && _lastToken.Kind != TokenKind.EndIndex))
+                (_lastToken.Kind != TokenKind.ExtensionObject && _lastToken.Kind != TokenKind.PropertyName && _lastToken.Kind != TokenKind.EndIndex))
             {
                 throw new ParseException(ParseExceptionKind.UnexpectedSymbol, _token, _raw);
             }
@@ -325,26 +290,6 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
             }
         }
 
-        // private void ValidateLiteral(Token token, Token lastToken)
-        // {
-        //     bool expected = false;
-        //     if (lastToken == null) // The first token.
-        //     {
-        //         expected = true;
-        //     }
-        //     else if (lastToken.Kind == TokenKind.OpenFunction ||    // Preceeded by opening punctuation
-        //         lastToken.Kind == TokenKind.OpenHashtable ||        // or by a separator.
-        //         lastToken.Kind == TokenKind.Separator)
-        //     {
-        //         expected = true;
-        //     }
-
-        //     if (!expected)
-        //     {
-        //         throw new ParseException(ParseExceptionKind.UnexpectedSymbol, token, _raw);
-        //     }
-        // }
-
         private void HandleSeparator()
         {
             ContainerInfo container = _containers.Count > 0 ? _containers.Peek() : null;        // Validate:
@@ -426,19 +371,6 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
             }
         }
 
-        private ExtensionObjectNode CreateExtensionObject(Token token, int level)
-        {
-            ArgUtil.NotNull(token, nameof(token));
-            switch (token.Kind)
-            {
-                case TokenKind.ExtensionObject:
-                    throw new NotImplementedException();
-                default:
-                    // Should never reach here.
-                    throw new NotSupportedException($"Unexpected hashtable token name: '{token.Kind}'");
-            }
-        }
-
         private static int GetMinParamCount(TokenKind kind)
         {
             switch (kind)
@@ -505,23 +437,22 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
             // TODO: LOC
             switch (kind)
             {
+                case ParseExceptionKind.ExpectedPropertyName:
+                    description = "Expected property name to follow deference operator";
                 case ParseExceptionKind.ExpectedStartParameter:
                     description = "Expected '(' to follow function";
                     break;
-                // case ParseExceptionKind.ExpectedOpenHashtable:
-                //     description = "Expected '[' to follow hashtable";
-                //     break;
                 case ParseExceptionKind.UnclosedFunction:
                     description = "Unclosed function";
                     break;
-                case ParseExceptionKind.UnclosedIndex:
-                    description = "Unclosed index";
-                    break;
-                case ParseExceptionKind.UnrecognizedValue:
-                    description = "Unrecognized value";
+                case ParseExceptionKind.UnclosedIndexer:
+                    description = "Unclosed indexer";
                     break;
                 case ParseExceptionKind.UnexpectedSymbol:
                     description = "Unexpected symbol";
+                    break;
+                case ParseExceptionKind.UnrecognizedValue:
+                    description = "Unrecognized value";
                     break;
                 default: // Should never reach here.
                     throw new Exception($"Unexpected parse exception kind '{kind}'.");
@@ -549,10 +480,10 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
     // todo: make internal
     public enum ParseExceptionKind
     {
+        ExpectedPropertyName,
         ExpectedStartParameter,
-        ExpectedStartIndex,
         UnclosedFunction,
-        UnclosedIndex,
+        UnclosedIndexer,
         UnexpectedSymbol,
         UnrecognizedValue,
     }
