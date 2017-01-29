@@ -8,6 +8,9 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
         private readonly LexicalAnalyzer _lexer;
         private readonly string _raw; // Raw expression string.
         private readonly ITraceWriter _trace;
+        private readonly Stack<ContainerInfo> _containers = new Stack<ContainerInfo>();
+        private Token _token;
+        private Token _lastToken;
 
         public Parser(string expression, ITraceWriter trace, IDictionary<string, object> extensionObjects)
         {
@@ -21,38 +24,88 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
 
         public Node Root { get; private set; }
 
+        private bool TryGetNextToken()
+        {
+            _lastToken = _token;
+            if (_lexer.TryGetNextToken(ref _token))
+            {
+                string indent = string.Empty.PadRight(_containers.Count * 2, '.');
+                switch (_token.Kind)
+                {
+                    case TokenKind.Boolean:
+                    case TokenKind.Number:
+                    case TokenKind.Version:
+                    case TokenKind.String:
+                    case TokenKind.Object:
+                        _trace.Verbose($"{indent}{_token.Kind} '{_token.ParsedValue}'");
+                        break;
+                    case TokenKind.Unrecognized:
+                        _trace.Verbose($"{indent}{_token.Kind} '{_raw.Substring(_token.Index, _token.Length)}'");
+                        break;
+                    case TokenKind.StartIndex:
+                    case TokenKind.StartParameter:
+                    case TokenKind.EndIndex:
+                    case TokenKind.EndParameter:
+                    case TokenKind.Separator:
+                    case TokenKind.Dereference:
+                        _trace.Verbose($"{indent}{_raw.Substring(_token.Index, 1)}");
+                        break;
+                    default:
+                        _trace.Verbose($"{indent}{_token.Kind}");
+                        break;
+                }
+
+                return true;
+            }
+
+            return false;
+        }
+
         private void CreateTree()
         {
             _trace.Verbose($"Entering {nameof(CreateTree)}");
-            var containers = new Stack<ContainerInfo>();
-            Token token = null;
-            Token lastToken = null;
-            while ((token = _lexer.GetNextToken()) != null)
+            while (TryGetNextToken())
             {
-                TraceToken(token, containers.Count);
-                Node newNode = null;
-                switch (token.Kind)
+                switch (_token.Kind)
                 {
                     case TokenKind.Unrecognized:
-                        throw new ParseException(ParseExceptionKind.UnrecognizedValue, token, _raw);
+                        throw new ParseException(ParseExceptionKind.UnrecognizedValue, _token, _raw);
 
                     // Punctuation
-                    case TokenKind.CloseFunction:
-                        ValidateCloseFunction(containers, token, lastToken);
-                        containers.Pop();
+                    case TokenKind.StartIndex:
+                        // ValidateStartIndex();
+                        HandleStartIndex();
                         break;
-                    case TokenKind.CloseHashtable:
-                        ValidateCloseHashtable(containers, token, lastToken);
-                        containers.Pop();
+                    case TokenKind.StartParameter:
+                        HandleStartParameter();
+                        // throw new ParseException(ParseExceptionKind.UnexpectedSymbol, token, _raw);
+                        // ValidateStartParameter();
                         break;
-                    case TokenKind.OpenFunction:
-                        ValidateOpenFunction(containers, token, lastToken);
+                    case TokenKind.EndIndex:
+                        HandleEndIndex();
+                        // ValidateEndIndex();
+                        // containers.Pop();
                         break;
-                    case TokenKind.OpenHashtable:
-                        ValidateOpenHashtable(containers, token, lastToken);
+                    case TokenKind.EndParameter:
+                        HandleEndParameter();
+                        // ValidateEndParameter();
+                        // containers.Pop();
                         break;
                     case TokenKind.Separator:
-                        ValidateSeparator(containers, token, lastToken);
+                        HandleSeparator();
+                        // ValidateSeparator();
+                        break;
+                    case TokenKind.Dereference:
+                        HandleDereference();
+                        // ValidateDereference();
+                        // lastToken = token;
+                        // if (_lexer.TryGetNextToken(ref token))
+                        // {
+                        //     TraceToken(token, containers.Count + 1);
+                        // }
+
+                        // if (token == null || token.)
+
                         break;
 
                     // Functions
@@ -66,56 +119,63 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
                     case TokenKind.NotEqual:
                     case TokenKind.Or:
                     case TokenKind.Xor:
-                        // Update the tree.
-                        newNode = CreateFunction(token, containers.Count);
-                        if (Root == null)
-                        {
-                            Root = newNode;
-                        }
-                        else
-                        {
-                            containers.Peek().Node.AddParameter(newNode);
-                        }
+                        HandleFunction();
+                        // // Update the tree.
+                        // newNode = CreateFunction(token, containers.Count);
+                        // if (Root == null)
+                        // {
+                        //     Root = newNode;
+                        // }
+                        // else
+                        // {
+                        //     containers.Peek().Node.AddParameter(newNode);
+                        // }
 
-                        // Push the container.
-                        containers.Push(new ContainerInfo() { Node = newNode as ContainerNode, Token = token });
+                        // // Push the container.
+                        // containers.Push(new ContainerInfo() { Node = newNode as ContainerNode, Token = token });
 
-                        // Open-function token should follow.
-                        lastToken = token;
-                        token = _lexer.GetNextToken();
-                        TraceToken(token, containers.Count);
-                        if (token == null || token.Kind != TokenKind.OpenFunction)
-                        {
-                            throw new ParseException(ParseExceptionKind.ExpectedOpenFunction, lastToken, _raw);
-                        }
+                        // // Validate '(' follows.
+                        // lastToken = token;
+                        // if (_lexer.TryGetNextToken(ref token))
+                        // {
+                        //     TraceToken(token, containers.Count);
+                        // }
+
+                        // if (token == null || token.Kind != TokenKind.StartParameter)
+                        // {
+                        //     throw new ParseException(ParseExceptionKind.ExpectedStartParameter, lastToken, _raw);
+                        // }
 
                         break;
 
-                    // Hashtables
-                    case TokenKind.Capabilities:
-                    case TokenKind.Variables:
-                        // Update the tree.
-                        newNode = CreateHashtable(token, containers.Count);
-                        if (Root == null)
-                        {
-                            Root = newNode;
-                        }
-                        else
-                        {
-                            containers.Peek().Node.AddParameter(newNode);
-                        }
+                    // Objects
+                    case TokenKind.Object:
+                        HandleObject();
+                        // // Update the tree.
+                        // newNode = CreateExtensionObject(token, containers.Count);
+                        // if (Root == null)
+                        // {
+                        //     Root = newNode;
+                        // }
+                        // else
+                        // {
+                        //     containers.Peek().Node.AddParameter(newNode);
+                        // }
 
-                        // Push the container.
-                        containers.Push(new ContainerInfo() { Node = newNode as ContainerNode, Token = token });
+                        // // Push the container.
+                        // containers.Push(new ContainerInfo() { Node = newNode as ContainerNode, Token = token });
 
-                        // Open-hashtable token should follow.
-                        lastToken = token;
-                        token = _lexer.GetNextToken();
-                        TraceToken(token, containers.Count);
-                        if (token == null || token.Kind != TokenKind.OpenHashtable)
-                        {
-                            throw new ParseException(ParseExceptionKind.ExpectedOpenHashtable, lastToken, _raw);
-                        }
+                        // // StartIndex or Dereference should follow.
+                        // lastToken = token;
+                        // if (_lexer.TryGetNextToken(ref token))
+                        // {
+                        //     TraceToken(token, containers.Count);
+                        // }
+
+                        // if (token == null || token.Kind != TokenKind.OpenHashtable)
+                        // {
+                        //     throw new ParseException(ParseExceptionKind.ExpectedOpenHashtable, lastToken, _raw);
+                        // }
 
                         break;
 
@@ -124,29 +184,28 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
                     case TokenKind.Number:
                     case TokenKind.Version:
                     case TokenKind.String:
-                        ValidateLiteral(token, lastToken);
+                        HandleLiteral();
+                        // ValidateLiteral(token, lastToken);
 
-                        // Update the tree.
-                        newNode = new LiteralValueNode(token.ParsedValue, _trace, containers.Count);
-                        if (Root == null)
-                        {
-                            Root = newNode;
-                        }
-                        else
-                        {
-                            containers.Peek().Node.AddParameter(newNode);
-                        }
+                        // // Update the tree.
+                        // newNode = new LiteralValueNode(token.ParsedValue, _trace, containers.Count);
+                        // if (Root == null)
+                        // {
+                        //     Root = newNode;
+                        // }
+                        // else
+                        // {
+                        //     containers.Peek().Node.AddParameter(newNode);
+                        // }
 
                         break;
                 }
-
-                lastToken = token;
             }
 
             // Validate all containers were closed.
-            if (containers.Count > 0)
+            if (_containers.Count > 0)
             {
-                ContainerInfo container = containers.Peek();
+                ContainerInfo container = _containers.Peek();
                 if (container.Node is FunctionNode)
                 {
                     throw new ParseException(ParseExceptionKind.UnclosedFunction, container.Token, _raw);
@@ -158,7 +217,57 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
             }
         }
 
-        private void ValidateCloseFunction(Stack<ContainerInfo> containers, Token token, Token lastToken)
+        private void HandleStartIndex()
+        {
+            // Validate follows an object, property name, or "]".
+            if (_lastToken.Kind == TokenKind.Object ||
+                _lastToken.Kind == TokenKind.PropertyName ||
+                _lastToken.Kind == TokenKind.EndIndex)
+            {
+                throw new ParseException(ParseExceptionKind.UnexpectedSymbol, _token, _raw);
+            }
+
+            // Get the node that is being indexed into.
+            Node obj = null;
+            ContainerNode container = null;
+            if (_containers.Count > 0)
+            {
+                container = _containers.Peek().Node;
+                obj = container.Parameters[container.Parameters.Count - 1];
+            }
+            else
+            {
+                obj = Root;
+            }
+
+            new IndexNode()
+        }
+
+        private void ValidateStartIndex(Stack<ContainerInfo> containers, Token token, Token lastToken)
+        {
+            ContainerInfo container = containers.Count > 0 ? containers.Peek() : null;
+            //                                          // Validate:
+            if (container == null ||                    // 1) Container is not null
+                !(container.Node is HashtableNode) ||   // 2) Container is a function
+                container.Token != lastToken)           // 3) Container is the last token
+            {
+                throw new ParseException(ParseExceptionKind.UnexpectedSymbol, token, _raw);
+            }
+        }
+
+        // private void ValidateStartParameter(Stack<ContainerInfo> containers, Token token, Token lastToken)
+        // {
+        //     ContainerInfo container = containers.Count > 0 ? containers.Peek() : null;
+        //     //                                          // Validate:
+        //     if (container == null ||                    // 1) Container is not null
+        //         !(container.Node is FunctionNode) ||    // 2) Container is a function
+        //         container.Token != lastToken)           // 3) Container is the last token
+        //     {
+        //         throw new ParseException(ParseExceptionKind.UnexpectedSymbol, token, _raw);
+        //     }
+        // }
+
+        private void ValidateEndParameter(Stack<ContainerInfo> containers, Token token, Token lastToken)
         {
             ContainerInfo container = containers.Count > 0 ? containers.Peek() : null;      // Validate:
             if (container == null ||                                                        // 1) Container is not null
@@ -170,37 +279,13 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
             }
         }
 
-        private void ValidateCloseHashtable(Stack<ContainerInfo> containers, Token token, Token lastToken)
+        private void ValidateEndIndex(Stack<ContainerInfo> containers, Token token, Token lastToken)
         {
             ContainerInfo container = containers.Count > 0 ? containers.Peek() : null;
             //                                          // Validate:
             if (container == null ||                    // 1) Container is not null
                 !(container.Node is HashtableNode) ||   // 2) Container is a hashtable
                 container.Node.Parameters.Count != 1)   // 3) Exactly 1 parameter
-            {
-                throw new ParseException(ParseExceptionKind.UnexpectedSymbol, token, _raw);
-            }
-        }
-
-        private void ValidateOpenFunction(Stack<ContainerInfo> containers, Token token, Token lastToken)
-        {
-            ContainerInfo container = containers.Count > 0 ? containers.Peek() : null;
-            //                                          // Validate:
-            if (container == null ||                    // 1) Container is not null
-                !(container.Node is FunctionNode) ||    // 2) Container is a function
-                container.Token != lastToken)           // 3) Container is the last token
-            {
-                throw new ParseException(ParseExceptionKind.UnexpectedSymbol, token, _raw);
-            }
-        }
-
-        private void ValidateOpenHashtable(Stack<ContainerInfo> containers, Token token, Token lastToken)
-        {
-            ContainerInfo container = containers.Count > 0 ? containers.Peek() : null;
-            //                                          // Validate:
-            if (container == null ||                    // 1) Container is not null
-                !(container.Node is HashtableNode) ||   // 2) Container is a function
-                container.Token != lastToken)           // 3) Container is the last token
             {
                 throw new ParseException(ParseExceptionKind.UnexpectedSymbol, token, _raw);
             }
@@ -270,43 +355,16 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
             }
         }
 
-        private HashtableNode CreateHashtable(Token token, int level)
+        private ExtensionObjectNode CreateExtensionObject(Token token, int level)
         {
             ArgUtil.NotNull(token, nameof(token));
             switch (token.Kind)
             {
-                case TokenKind.Capabilities:
-                case TokenKind.Variables:
+                case TokenKind.ExtensionObject:
                     throw new NotImplementedException();
                 default:
                     // Should never reach here.
                     throw new NotSupportedException($"Unexpected hashtable token name: '{token.Kind}'");
-            }
-        }
-
-        private void TraceToken(Token token, int level)
-        {
-            string indent = string.Empty.PadRight(level * 2, '.');
-            switch (token.Kind)
-            {
-                case TokenKind.Number:
-                case TokenKind.Version:
-                case TokenKind.String:
-                    _trace.Verbose($"{indent}{token.Kind} '{token.ParsedValue}'");
-                    break;
-                case TokenKind.Unrecognized:
-                    _trace.Verbose($"{indent}{token.Kind} '{_raw.Substring(token.Index, token.Length)}'");
-                    break;
-                case TokenKind.CloseFunction:
-                case TokenKind.CloseHashtable:
-                case TokenKind.OpenFunction:
-                case TokenKind.OpenHashtable:
-                case TokenKind.Separator:
-                    _trace.Verbose($"{indent}{_raw.Substring(token.Index, 1)}");
-                    break;
-                default:
-                    _trace.Verbose($"{indent}{token.Kind}");
-                    break;
             }
         }
 
@@ -376,17 +434,17 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
             // TODO: LOC
             switch (kind)
             {
-                case ParseExceptionKind.ExpectedOpenFunction:
+                case ParseExceptionKind.ExpectedStartParameter:
                     description = "Expected '(' to follow function";
                     break;
-                case ParseExceptionKind.ExpectedOpenHashtable:
-                    description = "Expected '[' to follow hashtable";
-                    break;
+                // case ParseExceptionKind.ExpectedOpenHashtable:
+                //     description = "Expected '[' to follow hashtable";
+                //     break;
                 case ParseExceptionKind.UnclosedFunction:
                     description = "Unclosed function";
                     break;
-                case ParseExceptionKind.UnclosedHashtable:
-                    description = "Unclosed hashtable";
+                case ParseExceptionKind.UnclosedIndex:
+                    description = "Unclosed index";
                     break;
                 case ParseExceptionKind.UnrecognizedValue:
                     description = "Unrecognized value";
@@ -420,10 +478,10 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
     // todo: make internal
     public enum ParseExceptionKind
     {
-        ExpectedOpenFunction,
-        ExpectedOpenHashtable,
+        ExpectedStartParameter,
+        ExpectedStartIndex,
         UnclosedFunction,
-        UnclosedHashtable,
+        UnclosedIndex,
         UnexpectedSymbol,
         UnrecognizedValue,
     }

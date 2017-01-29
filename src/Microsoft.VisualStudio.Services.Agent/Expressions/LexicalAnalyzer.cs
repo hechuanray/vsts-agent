@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Text;
 using System.Text.RegularExpressions;
 
 namespace Microsoft.VisualStudio.Services.Agent.Expressions
@@ -23,7 +24,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
             _extensionObjects = extensionObjects;
         }
 
-        public Token GetNextToken()
+        public bool TryGetNextToken(ref Token token)
         {
             // Skip whitespace.
             while (_index < _raw.Length && char.IsWhiteSpace(_raw[_index]))
@@ -34,12 +35,12 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
             // Test end of string.
             if (_index >= _raw.Length)
             {
-                return null;
+                token = null;
+                return false;
             }
 
             // Read the first character to determine the type of token.
             char c = _raw[_index];
-            Token token;
             switch (c)
             {
                 case Constants.StartIndex:
@@ -77,7 +78,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
             }
 
             _lastToken = token;
-            return token;
+            return true;
         }
 
         private Token ReadNumberOrVersionToken()
@@ -132,80 +133,78 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
                 _index++;
             }
 
+            // Test if valid keyword character sequence.
             int length = _index - startIndex;
             string str = _raw.Substring(startIndex, length);
             if (s_keywordRegex.IsMatch(str))
             {
+                // Test if follows property dereference operator.
                 if (_lastToken != null && _lastToken.Kind == TokenKind.Dereference)
                 {
                     return new Token(TokenKind.PropertyName, startIndex, length, str);
                 }
+
+                // Boolean
+                if (str.Equals(bool.TrueString, StringComparison.OrdinalIgnoreCase))
+                {
+                    return new Token(TokenKind.Boolean, startIndex, length, true);
+                }
+                else if (str.Equals(bool.FalseString, StringComparison.OrdinalIgnoreCase))
+                {
+                    return new Token(TokenKind.Boolean, startIndex, length, false);
+                }
+                // Function
+                else if (str.Equals(Constants.And, StringComparison.OrdinalIgnoreCase))
+                {
+                    return new Token(TokenKind.And, startIndex, length);
+                }
+                else if (str.Equals(Constants.Equal, StringComparison.OrdinalIgnoreCase))
+                {
+                    return new Token(TokenKind.Equal, startIndex, length);
+                }
+                else if (str.Equals(Constants.GreaterThan, StringComparison.OrdinalIgnoreCase))
+                {
+                    return new Token(TokenKind.GreaterThan, startIndex, length);
+                }
+                else if (str.Equals(Constants.GreaterThanOrEqual, StringComparison.OrdinalIgnoreCase))
+                {
+                    return new Token(TokenKind.GreaterThanOrEqual, startIndex, length);
+                }
+                else if (str.Equals(Constants.LessThan, StringComparison.OrdinalIgnoreCase))
+                {
+                    return new Token(TokenKind.LessThan, startIndex, length);
+                }
+                else if (str.Equals(Constants.LessThanOrEqual, StringComparison.OrdinalIgnoreCase))
+                {
+                    return new Token(TokenKind.LessThanOrEqual, startIndex, length);
+                }
+                else if (str.Equals(Constants.Not, StringComparison.OrdinalIgnoreCase))
+                {
+                    return new Token(TokenKind.Not, startIndex, length);
+                }
+                else if (str.Equals(Constants.NotEqual, StringComparison.OrdinalIgnoreCase))
+                {
+                    return new Token(TokenKind.NotEqual, startIndex, length);
+                }
+                else if (str.Equals(Constants.Or, StringComparison.OrdinalIgnoreCase))
+                {
+                    return new Token(TokenKind.Or, startIndex, length);
+                }
+                else if (str.Equals(Constants.Xor, StringComparison.OrdinalIgnoreCase))
+                {
+                    return new Token(TokenKind.Xor, startIndex, length);
+                }
+
+                // Extension object
+                object obj;
+                if (_extensionObjects.TryGetValue(str, out obj))
+                {
+                    return new Token(TokenKind.Object, startIndex, length);
+                }
             }
 
-            // Convert to token.
-            if (str.Equals(bool.TrueString, StringComparison.OrdinalIgnoreCase))
-            {
-                return new Token(TokenKind.Boolean, startIndex, length, true);
-            }
-            else if (str.Equals(bool.FalseString, StringComparison.OrdinalIgnoreCase))
-            {
-                return new Token(TokenKind.Boolean, startIndex, length, false);
-            }
-            // Functions
-            else if (str.Equals(Constants.And, StringComparison.OrdinalIgnoreCase))
-            {
-                return new Token(TokenKind.And, startIndex, length);
-            }
-            else if (str.Equals(Constants.Equal, StringComparison.OrdinalIgnoreCase))
-            {
-                return new Token(TokenKind.Equal, startIndex, length);
-            }
-            else if (str.Equals(Constants.GreaterThan, StringComparison.OrdinalIgnoreCase))
-            {
-                return new Token(TokenKind.GreaterThan, startIndex, length);
-            }
-            else if (str.Equals(Constants.GreaterThanOrEqual, StringComparison.OrdinalIgnoreCase))
-            {
-                return new Token(TokenKind.GreaterThanOrEqual, startIndex, length);
-            }
-            else if (str.Equals(Constants.LessThan, StringComparison.OrdinalIgnoreCase))
-            {
-                return new Token(TokenKind.LessThan, startIndex, length);
-            }
-            else if (str.Equals(Constants.LessThanOrEqual, StringComparison.OrdinalIgnoreCase))
-            {
-                return new Token(TokenKind.LessThanOrEqual, startIndex, length);
-            }
-            else if (str.Equals(Constants.Not, StringComparison.OrdinalIgnoreCase))
-            {
-                return new Token(TokenKind.Not, startIndex, length);
-            }
-            else if (str.Equals(Constants.NotEqual, StringComparison.OrdinalIgnoreCase))
-            {
-                return new Token(TokenKind.NotEqual, startIndex, length);
-            }
-            else if (str.Equals(Constants.Or, StringComparison.OrdinalIgnoreCase))
-            {
-                return new Token(TokenKind.Or, startIndex, length);
-            }
-            else if (str.Equals(Constants.Xor, StringComparison.OrdinalIgnoreCase))
-            {
-                return new Token(TokenKind.Xor, startIndex, length);
-            }
-            // Hashtables
-            else if (str.Equals(Constants.Capabilities, StringComparison.OrdinalIgnoreCase))
-            {
-                return new Token(TokenKind.Capabilities, startIndex, length);
-            }
-            else if (str.Equals(Constants.Variables, StringComparison.OrdinalIgnoreCase))
-            {
-                return new Token(TokenKind.Variables, startIndex, length);
-            }
             // Unrecognized
-            else
-            {
-                return new Token(TokenKind.Unrecognized, startIndex, length);
-            }
+            return new Token(TokenKind.Unrecognized, startIndex, length);
         }
 
         private Token ReadStringToken()

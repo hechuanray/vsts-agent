@@ -31,11 +31,14 @@
         Separator,
         Dereference,
 
-        // Literal value types
+        // Values
         Boolean,
         Number,
         Version,
         String,
+        Object,
+        PropertyName,
+
 
         // Functions
         And,
@@ -48,9 +51,6 @@
         NotEqual,
         Or,
         Xor,
-
-        // Extensions
-        ExtensionObject,
 
         Unrecognized,
     }
