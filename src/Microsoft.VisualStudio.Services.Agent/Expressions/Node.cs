@@ -14,15 +14,15 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
             NumberStyles.AllowThousands |
             NumberStyles.AllowTrailingWhite;
         private readonly ITraceWriter _trace;
-        private readonly int _level;
 
-        public Node(ITraceWriter trace, int level)
+        public Node(ITraceWriter trace)
         {
             _trace = trace;
-            _level = level;
         }
 
         public ContainerNode Container { get; set; }
+
+        protected int Level { get; set; }
 
         public abstract object GetValue();
 
@@ -195,7 +195,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
 
         protected void TraceInfo(string message)
         {
-            _trace.Info(string.Empty.PadLeft(_level * 2, '.') + (message ?? string.Empty));
+            _trace.Info(string.Empty.PadLeft(Level * 2, '.') + (message ?? string.Empty));
         }
 
         protected void TraceValue(object val, bool isUnconverted = false, string conversionFailed = "")
@@ -281,30 +281,12 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
         }
     }
 
-    internal abstract class ContainerNode : Node
-    {
-        public ContainerNode(ITraceWriter trace, int level)
-            : base(trace, level)
-        {
-        }
-
-        private readonly List<Node> _parameters = new List<Node>();
-
-        public IReadOnlyList<Node> Parameters => _parameters.AsReadOnly();
-
-        public void AddParameter(Node node)
-        {
-            _parameters.Add(node);
-            node.Container = this;
-        }
-    }
-
     internal sealed class LiteralValueNode : Node
     {
         private readonly object _value;
 
-        public LiteralValueNode(object value, ITraceWriter trace, int level)
-            : base(trace, level)
+        public LiteralValueNode(object value, ITraceWriter trace)
+            : base(trace)
         {
             _value = value;
         }
@@ -316,18 +298,49 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
         }
     }
 
-    internal abstract class HashtableNode : ContainerNode
+    internal abstract class ContainerNode : Node
     {
-        public HashtableNode(ITraceWriter trace, int level)
-            : base(trace, level)
+        private readonly List<Node> _parameters = new List<Node>();
+
+        public ContainerNode(ITraceWriter trace)
+            : base(trace)
         {
+        }
+
+        public IReadOnlyList<Node> Parameters => _parameters.AsReadOnly();
+
+        public void AddParameter(Node node)
+        {
+            _parameters.Add(node);
+            node.Container = this;
+            node.Level = Level + 1;
+        }
+
+        public void ReplaceParameter(int index, Node node)
+        {
+            _parameters[index] = node;
+            node.Container = this;
+            node.Level = Level + 1;
+        }
+    }
+
+    internal sealed class IndexerNode : ContainerNode
+    {
+        public IndexerNode(ITraceWriter trace)
+            : base(trace)
+        {
+        }
+
+        public override object GetValue()
+        {
+            throw new NotImplementedException(); // todo
         }
     }
 
     internal abstract class FunctionNode : ContainerNode
     {
-        public FunctionNode(ITraceWriter trace, int level)
-            : base(trace, level)
+        public FunctionNode(ITraceWriter trace)
+            : base(trace)
         {
         }
 
@@ -339,10 +352,10 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
         }
     }
 
-    internal sealed class AndFunction : FunctionNode
+    internal sealed class AndNode : FunctionNode
     {
-        public AndFunction(ITraceWriter trace, int level)
-            : base(trace, level)
+        public AndNode(ITraceWriter trace)
+            : base(trace)
         {
         }
 
@@ -366,10 +379,10 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
         }
     }
 
-    internal sealed class ContainsFunction : FunctionNode
+    internal sealed class ContainsNode : FunctionNode
     {
-        public ContainsFunction(ITraceWriter trace, int level)
-            : base(trace, level)
+        public ContainsNode(ITraceWriter trace)
+            : base(trace)
         {
         }
 
@@ -386,10 +399,10 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
         }
     }
 
-    internal sealed class EndsWithFunction : FunctionNode
+    internal sealed class EndsWithNode : FunctionNode
     {
-        public EndsWithFunction(ITraceWriter trace, int level)
-            : base(trace, level)
+        public EndsWithNode(ITraceWriter trace)
+            : base(trace)
         {
         }
 
@@ -406,10 +419,10 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
         }
     }
 
-    internal sealed class EqualFunction : FunctionNode
+    internal sealed class EqualNode : FunctionNode
     {
-        public EqualFunction(ITraceWriter trace, int level)
-            : base(trace, level)
+        public EqualNode(ITraceWriter trace)
+            : base(trace)
         {
         }
 
@@ -463,10 +476,10 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
         }
     }
 
-    internal sealed class GreaterThanFunction : FunctionNode
+    internal sealed class GreaterThanNode : FunctionNode
     {
-        public GreaterThanFunction(ITraceWriter trace, int level)
-            : base(trace, level)
+        public GreaterThanNode(ITraceWriter trace)
+            : base(trace)
         {
         }
 
@@ -503,10 +516,10 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
         }
     }
 
-    internal sealed class GreaterThanOrEqualFunction : FunctionNode
+    internal sealed class GreaterThanOrEqualNode : FunctionNode
     {
-        public GreaterThanOrEqualFunction(ITraceWriter trace, int level)
-            : base(trace, level)
+        public GreaterThanOrEqualNode(ITraceWriter trace)
+            : base(trace)
         {
         }
 
@@ -543,10 +556,10 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
         }
     }
 
-    internal sealed class InFunction : FunctionNode
+    internal sealed class InNode : FunctionNode
     {
-        public InFunction(ITraceWriter trace, int level)
-            : base(trace, level)
+        public InNode(ITraceWriter trace)
+            : base(trace)
         {
         }
 
@@ -608,10 +621,10 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
         }
     }
 
-    internal sealed class LessThanFunction : FunctionNode
+    internal sealed class LessThanNode : FunctionNode
     {
-        public LessThanFunction(ITraceWriter trace, int level)
-            : base(trace, level)
+        public LessThanNode(ITraceWriter trace)
+            : base(trace)
         {
         }
 
@@ -648,10 +661,10 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
         }
     }
 
-    internal sealed class LessThanOrEqualFunction : FunctionNode
+    internal sealed class LessThanOrEqualNode : FunctionNode
     {
-        public LessThanOrEqualFunction(ITraceWriter trace, int level)
-            : base(trace, level)
+        public LessThanOrEqualNode(ITraceWriter trace)
+            : base(trace)
         {
         }
 
@@ -688,10 +701,10 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
         }
     }
 
-    internal sealed class NotEqualFunction : FunctionNode
+    internal sealed class NotEqualNode : FunctionNode
     {
-        public NotEqualFunction(ITraceWriter trace, int level)
-            : base(trace, level)
+        public NotEqualNode(ITraceWriter trace)
+            : base(trace)
         {
         }
 
@@ -745,10 +758,10 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
         }
     }
 
-    internal sealed class NotFunction : FunctionNode
+    internal sealed class NotNode : FunctionNode
     {
-        public NotFunction(ITraceWriter trace, int level)
-            : base(trace, level)
+        public NotNode(ITraceWriter trace)
+            : base(trace)
         {
         }
 
@@ -763,10 +776,10 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
         }
     }
 
-    internal sealed class NotInFunction : FunctionNode
+    internal sealed class NotInNode : FunctionNode
     {
-        public NotInFunction(ITraceWriter trace, int level)
-            : base(trace, level)
+        public NotInNode(ITraceWriter trace)
+            : base(trace)
         {
         }
 
@@ -829,10 +842,10 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
         }
     }
 
-    internal sealed class OrFunction : FunctionNode
+    internal sealed class OrNode : FunctionNode
     {
-        public OrFunction(ITraceWriter trace, int level)
-            : base(trace, level)
+        public OrNode(ITraceWriter trace)
+            : base(trace)
         {
         }
 
@@ -856,10 +869,10 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
         }
     }
 
-    internal sealed class StartsWithFunction : FunctionNode
+    internal sealed class StartsWithNode : FunctionNode
     {
-        public StartsWithFunction(ITraceWriter trace, int level)
-            : base(trace, level)
+        public StartsWithNode(ITraceWriter trace)
+            : base(trace)
         {
         }
 
@@ -876,10 +889,10 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
         }
     }
 
-    internal sealed class XorFunction : FunctionNode
+    internal sealed class XorNode : FunctionNode
     {
-        public XorFunction(ITraceWriter trace, int level)
-            : base(trace, level)
+        public XorNode(ITraceWriter trace)
+            : base(trace)
         {
         }
 

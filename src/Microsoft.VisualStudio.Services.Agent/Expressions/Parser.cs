@@ -73,7 +73,6 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
 
                     // Punctuation
                     case TokenKind.StartIndex:
-                        // ValidateStartIndex();
                         HandleStartIndex();
                         break;
                     case TokenKind.StartParameter:
@@ -97,15 +96,6 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
                         break;
                     case TokenKind.Dereference:
                         HandleDereference();
-                        // ValidateDereference();
-                        // lastToken = token;
-                        // if (_lexer.TryGetNextToken(ref token))
-                        // {
-                        //     TraceToken(token, containers.Count + 1);
-                        // }
-
-                        // if (token == null || token.)
-
                         break;
 
                     // Functions
@@ -120,32 +110,6 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
                     case TokenKind.Or:
                     case TokenKind.Xor:
                         HandleFunction();
-                        // // Update the tree.
-                        // newNode = CreateFunction(token, containers.Count);
-                        // if (Root == null)
-                        // {
-                        //     Root = newNode;
-                        // }
-                        // else
-                        // {
-                        //     containers.Peek().Node.AddParameter(newNode);
-                        // }
-
-                        // // Push the container.
-                        // containers.Push(new ContainerInfo() { Node = newNode as ContainerNode, Token = token });
-
-                        // // Validate '(' follows.
-                        // lastToken = token;
-                        // if (_lexer.TryGetNextToken(ref token))
-                        // {
-                        //     TraceToken(token, containers.Count);
-                        // }
-
-                        // if (token == null || token.Kind != TokenKind.StartParameter)
-                        // {
-                        //     throw new ParseException(ParseExceptionKind.ExpectedStartParameter, lastToken, _raw);
-                        // }
-
                         break;
 
                     // Objects
@@ -212,7 +176,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
                 }
                 else
                 {
-                    throw new ParseException(ParseExceptionKind.UnclosedHashtable, container.Token, _raw);
+                    throw new ParseException(ParseExceptionKind.UnclosedIndexer, container.Token, _raw);
                 }
             }
         }
@@ -220,39 +184,75 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
         private void HandleStartIndex()
         {
             // Validate follows an object, property name, or "]".
-            if (_lastToken.Kind == TokenKind.Object ||
-                _lastToken.Kind == TokenKind.PropertyName ||
-                _lastToken.Kind == TokenKind.EndIndex)
+            if (_lastToken == null ||
+                (_lastToken.Kind != TokenKind.Object && _lastToken.Kind != TokenKind.PropertyName && _lastToken.Kind != TokenKind.EndIndex))
             {
                 throw new ParseException(ParseExceptionKind.UnexpectedSymbol, _token, _raw);
             }
 
-            // Get the node that is being indexed into.
+            // Wrap the object being indexed into.
+            var indexer = new IndexerNode(_trace);
             Node obj = null;
-            ContainerNode container = null;
             if (_containers.Count > 0)
             {
-                container = _containers.Peek().Node;
+                ContainerNode container = _containers.Peek().Node;
+                int objIndex = container.Parameters.Count;
                 obj = container.Parameters[container.Parameters.Count - 1];
+                container.ReplaceParameter(objIndex, indexer);
             }
             else
             {
                 obj = Root;
+                Root = indexer;
             }
 
-            new IndexNode()
+            indexer.AddParameter(obj);
+
+            // Update the container stack.
+            _containers.Push(new ContainerInfo() { Node = indexer, Token = _token });
         }
 
-        private void ValidateStartIndex(Stack<ContainerInfo> containers, Token token, Token lastToken)
+        private void HandleDereference()
         {
-            ContainerInfo container = containers.Count > 0 ? containers.Peek() : null;
-            //                                          // Validate:
-            if (container == null ||                    // 1) Container is not null
-                !(container.Node is HashtableNode) ||   // 2) Container is a function
-                container.Token != lastToken)           // 3) Container is the last token
+            // Validate follows an object, property name, or "]".
+            if (_lastToken == null ||
+                (_lastToken.Kind != TokenKind.Object && _lastToken.Kind != TokenKind.PropertyName && _lastToken.Kind != TokenKind.EndIndex))
             {
-                throw new ParseException(ParseExceptionKind.UnexpectedSymbol, token, _raw);
+                throw new ParseException(ParseExceptionKind.UnexpectedSymbol, _token, _raw);
             }
+
+            // Wrap the object being indexed into.
+            var indexer = new IndexerNode(_trace);
+            Node obj = null;
+            if (_containers.Count > 0)
+            {
+                ContainerNode container = _containers.Peek().Node;
+                int objIndex = container.Parameters.Count;
+                obj = container.Parameters[container.Parameters.Count - 1];
+                container.ReplaceParameter(objIndex, indexer);
+            }
+            else
+            {
+                obj = Root;
+                Root = indexer;
+            }
+
+            indexer.AddParameter(obj);
+
+            // Validate a property name follows.
+            if (!TryGetNextToken())
+            {
+                throw new ParseException(ParseExceptionKind.ExpectedPropertyName, _lastToken, _raw);
+            }
+
+            if (_token.Kind != TokenKind.PropertyName)
+            {
+                throw new ParseException(ParseExceptionKind.UnexpectedSymbol, _token, _raw);
+            }
+
+            // Add the property name as the index.
+            string propertyName = _raw.Substring(_token.Index, _token.Length);
+            indexer.AddParameter(new LiteralValueNode(propertyName, _trace));
         }
 
         // private void ValidateStartParameter(Stack<ContainerInfo> containers, Token token, Token lastToken)
@@ -324,34 +324,71 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
             }
         }
 
-        private FunctionNode CreateFunction(Token token, int level)
+        private void HandleFunction()
         {
-            ArgUtil.NotNull(token, nameof(token));
-            switch (token.Kind)
+            // Validate follows "," or "[" or "(".
+            if (_lastToken == null ||
+                (_lastToken.Kind != TokenKind.Separator && _lastToken.Kind != TokenKind.StartIndex && _lastToken.Kind != TokenKind.StartParameter))
+            {
+                throw new ParseException(ParseExceptionKind.UnexpectedSymbol, _token, _raw);
+            }
+
+            // Create the node.
+            FunctionNode node;
+            switch (_token.Kind)
             {
                 case TokenKind.And:
-                    return new AndFunction(_trace, level);
+                    node = new AndNode(_trace);
+                    break;
                 case TokenKind.Equal:
-                    return new EqualFunction(_trace, level);
+                    node = new EqualNode(_trace);
+                    break;
                 case TokenKind.GreaterThan:
-                    return new GreaterThanFunction(_trace, level);
+                    node = new GreaterThanNode(_trace);
+                    break;
                 case TokenKind.GreaterThanOrEqual:
-                    return new GreaterThanOrEqualFunction(_trace, level);
+                    node = new GreaterThanOrEqualNode(_trace);
+                    break;
                 case TokenKind.LessThan:
-                    return new LessThanFunction(_trace, level);
+                    node = new LessThanNode(_trace);
+                    break;
                 case TokenKind.LessThanOrEqual:
-                    return new LessThanOrEqualFunction(_trace, level);
+                    node = new LessThanOrEqualNode(_trace);
+                    break;
                 case TokenKind.Not:
-                    return new NotFunction(_trace, level);
+                    node = new NotNode(_trace);
+                    break;
                 case TokenKind.NotEqual:
-                    return new NotEqualFunction(_trace, level);
+                    node = new NotEqualNode(_trace);
+                    break;
                 case TokenKind.Or:
-                    return new OrFunction(_trace, level);
+                    node = new OrNode(_trace);
+                    break;
                 case TokenKind.Xor:
-                    return new XorFunction(_trace, level);
+                    node = new XorNode(_trace);
+                    break;
                 default:
                     // Should never reach here.
-                    throw new NotSupportedException($"Unexpected function token name: '{token.Kind}'");
+                    throw new NotSupportedException($"Unexpected function token name: '{_token.Kind}'");
+            }
+
+            // Update the tree.
+            if (Root == null)
+            {
+                Root = node;
+            }
+            else
+            {
+                _containers.Peek().Node.AddParameter(node);
+            }
+
+            // Update the container stack.
+            _containers.Push(new ContainerInfo() { Node = node, Token = _token });
+
+            // Validate '(' follows.
+            if (!TryGetNextToken || _token.Kind != TokenKind.StartParameter)
+            {
+                throw new ParseException(ParseExceptionKind.ExpectedStartParameter, _lastToken, _raw);
             }
         }
 
