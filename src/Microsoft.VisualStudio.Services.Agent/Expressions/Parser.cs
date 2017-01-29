@@ -5,6 +5,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
 {
     internal sealed class Parser
     {
+        private readonly IDictionary<string, object> _extensionObjects;
         private readonly LexicalAnalyzer _lexer;
         private readonly string _raw; // Raw expression string.
         private readonly ITraceWriter _trace;
@@ -18,48 +19,12 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
             ArgUtil.NotNull(extensionObjects, nameof(extensionObjects));
             _raw = expression;
             _trace = trace;
-            _lexer = new LexicalAnalyzer(expression, trace, extensionObjects);
+            _extensionObjects = extensionObjects;
+            _lexer = new LexicalAnalyzer(expression, trace, _extensionObjects);
             CreateTree();
         }
 
         public Node Root { get; private set; }
-
-        private bool TryGetNextToken()
-        {
-            _lastToken = _token;
-            if (_lexer.TryGetNextToken(ref _token))
-            {
-                string indent = string.Empty.PadRight(_containers.Count * 2, '.');
-                switch (_token.Kind)
-                {
-                    case TokenKind.Boolean:
-                    case TokenKind.Number:
-                    case TokenKind.Version:
-                    case TokenKind.String:
-                    case TokenKind.Object:
-                        _trace.Verbose($"{indent}{_token.Kind} '{_token.ParsedValue}'");
-                        break;
-                    case TokenKind.Unrecognized:
-                        _trace.Verbose($"{indent}{_token.Kind} '{_raw.Substring(_token.Index, _token.Length)}'");
-                        break;
-                    case TokenKind.StartIndex:
-                    case TokenKind.StartParameter:
-                    case TokenKind.EndIndex:
-                    case TokenKind.EndParameter:
-                    case TokenKind.Separator:
-                    case TokenKind.Dereference:
-                        _trace.Verbose($"{indent}{_raw.Substring(_token.Index, 1)}");
-                        break;
-                    default:
-                        _trace.Verbose($"{indent}{_token.Kind}");
-                        break;
-                }
-
-                return true;
-            }
-
-            return false;
-        }
 
         private void CreateTree()
         {
@@ -102,43 +67,44 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
                         HandleFunction();
                         break;
 
-                    // Objects
-                    case TokenKind.Object:
-                        HandleObject();
-                        // // Update the tree.
-                        // newNode = CreateExtensionObject(token, containers.Count);
-                        // if (Root == null)
-                        // {
-                        //     Root = newNode;
-                        // }
-                        // else
-                        // {
-                        //     containers.Peek().Node.AddParameter(newNode);
-                        // }
+                    // // Objects
+                    // case TokenKind.Object:
+                    //     HandleObject();
+                    //     // // Update the tree.
+                    //     // newNode = CreateExtensionObject(token, containers.Count);
+                    //     // if (Root == null)
+                    //     // {
+                    //     //     Root = newNode;
+                    //     // }
+                    //     // else
+                    //     // {
+                    //     //     containers.Peek().Node.AddParameter(newNode);
+                    //     // }
 
-                        // // Push the container.
-                        // containers.Push(new ContainerInfo() { Node = newNode as ContainerNode, Token = token });
+                    //     // // Push the container.
+                    //     // containers.Push(new ContainerInfo() { Node = newNode as ContainerNode, Token = token });
 
-                        // // StartIndex or Dereference should follow.
-                        // lastToken = token;
-                        // if (_lexer.TryGetNextToken(ref token))
-                        // {
-                        //     TraceToken(token, containers.Count);
-                        // }
+                    //     // // StartIndex or Dereference should follow.
+                    //     // lastToken = token;
+                    //     // if (_lexer.TryGetNextToken(ref token))
+                    //     // {
+                    //     //     TraceToken(token, containers.Count);
+                    //     // }
 
-                        // if (token == null || token.Kind != TokenKind.OpenHashtable)
-                        // {
-                        //     throw new ParseException(ParseExceptionKind.ExpectedOpenHashtable, lastToken, _raw);
-                        // }
+                    //     // if (token == null || token.Kind != TokenKind.OpenHashtable)
+                    //     // {
+                    //     //     throw new ParseException(ParseExceptionKind.ExpectedOpenHashtable, lastToken, _raw);
+                    //     // }
 
-                        break;
+                    //     break;
 
-                    // Literal values
+                    // Value types
                     case TokenKind.Boolean:
                     case TokenKind.Number:
                     case TokenKind.Version:
                     case TokenKind.String:
-                        HandleLiteral();
+                    case TokenKind.Object:
+                        HandleValue();
                         // ValidateLiteral(token, lastToken);
 
                         // // Update the tree.
@@ -151,7 +117,6 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
                         // {
                         //     containers.Peek().Node.AddParameter(newNode);
                         // }
-
                         break;
                     case TokenKind.PropertyName:
                     case TokenKind.StartParameter:
@@ -173,6 +138,43 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
                     throw new ParseException(ParseExceptionKind.UnclosedIndexer, container.Token, _raw);
                 }
             }
+        }
+
+        private bool TryGetNextToken()
+        {
+            _lastToken = _token;
+            if (_lexer.TryGetNextToken(ref _token))
+            {
+                string indent = string.Empty.PadRight(_containers.Count * 2, '.');
+                switch (_token.Kind)
+                {
+                    case TokenKind.Boolean:
+                    case TokenKind.Number:
+                    case TokenKind.Version:
+                    case TokenKind.String:
+                    case TokenKind.Object:
+                        _trace.Verbose($"{indent}{_token.Kind} '{_token.ParsedValue}'");
+                        break;
+                    case TokenKind.Unrecognized:
+                        _trace.Verbose($"{indent}{_token.Kind} '{_raw.Substring(_token.Index, _token.Length)}'");
+                        break;
+                    case TokenKind.StartIndex:
+                    case TokenKind.StartParameter:
+                    case TokenKind.EndIndex:
+                    case TokenKind.EndParameter:
+                    case TokenKind.Separator:
+                    case TokenKind.Dereference:
+                        _trace.Verbose($"{indent}{_raw.Substring(_token.Index, 1)}");
+                        break;
+                    default:
+                        _trace.Verbose($"{indent}{_token.Kind}");
+                        break;
+                }
+
+                return true;
+            }
+
+            return false;
         }
 
         private void HandleStartIndex()
@@ -244,9 +246,9 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
                 throw new ParseException(ParseExceptionKind.UnexpectedSymbol, _token, _raw);
             }
 
-            // Add the property name as the index.
+            // Add the property name to the indexer, as a string.
             string propertyName = _raw.Substring(_token.Index, _token.Length);
-            indexer.AddParameter(new LiteralValueNode(propertyName, _trace));
+            indexer.AddParameter(new LeafNode(val: propertyName, extensionName: string.Empty, trace: _trace));
         }
 
         private void HandleEndParameter()
@@ -276,25 +278,72 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
             _containers.Pop();
         }
 
-        private void ValidateLiteral(Token token, Token lastToken)
+        private void HandleValue()
         {
+            // Validate whether the token is expected.
             bool expected = false;
-            if (lastToken == null) // The first token.
+            if (_lastToken == null) // The first token.
             {
                 expected = true;
             }
-            else if (lastToken.Kind == TokenKind.OpenFunction ||    // Preceeded by opening punctuation
-                lastToken.Kind == TokenKind.OpenHashtable ||        // or by a separator.
-                lastToken.Kind == TokenKind.Separator)
+            else if (_lastToken.Kind == TokenKind.StartIndex || // Preceeded by opening punctuation
+                _lastToken.Kind == TokenKind.StartParameter ||  // or by a separator.
+                _lastToken.Kind == TokenKind.Separator)
             {
                 expected = true;
             }
 
             if (!expected)
             {
-                throw new ParseException(ParseExceptionKind.UnexpectedSymbol, token, _raw);
+                throw new ParseException(ParseExceptionKind.UnexpectedSymbol, _token, _raw);
+            }
+
+            // Create the node.
+            object val;
+            string extensionName;
+            if (_token.Kind == TokenKind.ExtensionObject)
+            {
+                extensionName = _raw.Substring(_token.Index, _token.Length);
+                val = _extensionObjects[extensionName];
+            }
+            else
+            {
+                extensionName = string.Empty;
+                val = _token.ParsedValue;
+            }
+
+            var node = new LeafNode(val: val, extensionName: extensionName, trace: _trace);
+
+            // Update the tree.
+            if (Root == null)
+            {
+                Root = node;
+            }
+            else
+            {
+                _containers.Peek().Node.AddParameter(node);
             }
         }
+
+        // private void ValidateLiteral(Token token, Token lastToken)
+        // {
+        //     bool expected = false;
+        //     if (lastToken == null) // The first token.
+        //     {
+        //         expected = true;
+        //     }
+        //     else if (lastToken.Kind == TokenKind.OpenFunction ||    // Preceeded by opening punctuation
+        //         lastToken.Kind == TokenKind.OpenHashtable ||        // or by a separator.
+        //         lastToken.Kind == TokenKind.Separator)
+        //     {
+        //         expected = true;
+        //     }
+
+        //     if (!expected)
+        //     {
+        //         throw new ParseException(ParseExceptionKind.UnexpectedSymbol, token, _raw);
+        //     }
+        // }
 
         private void HandleSeparator()
         {

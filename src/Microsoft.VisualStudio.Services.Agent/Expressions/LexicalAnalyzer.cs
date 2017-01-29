@@ -141,7 +141,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
                 // Test if follows property dereference operator.
                 if (_lastToken != null && _lastToken.Kind == TokenKind.Dereference)
                 {
-                    return new Token(TokenKind.PropertyName, startIndex, length, str);
+                    return new Token(TokenKind.PropertyName, startIndex, length);
                 }
 
                 // Boolean
@@ -199,7 +199,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
                 object obj;
                 if (_extensionObjects.TryGetValue(str, out obj))
                 {
-                    return new Token(TokenKind.Object, startIndex, length);
+                    return new Token(TokenKind.ExtensionObject, startIndex, length);
                 }
             }
 

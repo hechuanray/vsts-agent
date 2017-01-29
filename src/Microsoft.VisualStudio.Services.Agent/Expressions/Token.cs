@@ -36,7 +36,7 @@
         Number,
         Version,
         String,
-        Object,
+        ExtensionObject,
         PropertyName,
 
 

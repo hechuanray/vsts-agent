@@ -170,7 +170,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
                 return true;
             }
 
-            TraceValue(val: null, isUnconverted: false, conversionFailed: "Unable to convert to Number");
+            TraceValue(val: null, isUnconverted: false, conversionSoftFailed: "Unable to convert to Number");
             return false;
         }
 
@@ -189,7 +189,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
                 return true;
             }
 
-            TraceValue(val: null, isUnconverted: false, conversionFailed: "Unable to convert to Version");
+            TraceValue(val: null, isUnconverted: false, conversionSoftFailed: "Unable to convert to Version");
             return false;
         }
 
@@ -198,15 +198,20 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
             _trace.Info(string.Empty.PadLeft(Level * 2, '.') + (message ?? string.Empty));
         }
 
-        protected void TraceValue(object val, bool isUnconverted = false, string conversionFailed = "")
+        protected void TraceValue(object val, bool isUnconverted = false, string conversionSoftFailed = "", string extensionName = "")
         {
             string prefix = isUnconverted ? string.Empty : "=> ";
-            if (!string.IsNullOrEmpty(conversionFailed))
+            if (!string.IsNullOrEmpty(conversionSoftFailed))
             {
-                TraceInfo(StringUtil.Format("{0}{1}", prefix, conversionFailed));
+                TraceInfo(StringUtil.Format("{0}{1}", prefix, conversionSoftFailed));
             }
 
             ValueKind kind;
+            if (val is IDictionary<string, object>)
+            {
+                val = !string.IsNullOrEmpty(extensionName) ? extensionName : "Object";
+                kind = ValueKind.Object;
+            }
             if (val is bool)
             {
                 kind = ValueKind.Boolean;
@@ -281,19 +286,21 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
         }
     }
 
-    internal sealed class LiteralValueNode : Node
+    internal sealed class LeafNode : Node
     {
         private readonly object _value;
+        private readonly string _extensionName;
 
-        public LiteralValueNode(object value, ITraceWriter trace)
+        public LeafNode(object val, string extensionName, ITraceWriter trace)
             : base(trace)
         {
-            _value = value;
+            _value = val;
+            _extensionName = extensionName;
         }
 
         public sealed override object GetValue()
         {
-            TraceValue(_value, isUnconverted: true);
+            TraceValue(_value, isUnconverted: true, conversionSoftFailed: string.Empty, extensionName: _extensionName);
             return _value;
         }
     }
@@ -911,6 +918,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
     {
         Boolean,
         Number,
+        Object,
         String,
         Version,
     }
