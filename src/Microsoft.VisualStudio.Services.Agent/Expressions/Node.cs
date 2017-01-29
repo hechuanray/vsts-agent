@@ -22,7 +22,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
 
         public ContainerNode Container { get; set; }
 
-        protected int Level { get; set; }
+        public int Level { get; set; }
 
         public abstract object GetValue();
 

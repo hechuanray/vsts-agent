@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using Microsoft.VisualStudio.Services.Agent.Expressions;
 using Xunit;
 
@@ -392,7 +393,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Tests
         [Fact]
         [Trait("Level", "L0")]
         [Trait("Category", "Common")]
-        public void ThrowsWhenExpectedOpenFunction()
+        public void ThrowsWhenExpectedStartParameter()
         {
             using (var hc = new TestHostContext(this))
             {
@@ -402,7 +403,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Tests
                 }
                 catch (ParseException ex)
                 {
-                    Assert.Equal(ParseExceptionKind.ExpectedOpenFunction, ex.Kind);
+                    Assert.Equal(ParseExceptionKind.ExpectedStartParameter, ex.Kind);
                     Assert.Equal("eq", ex.RawToken);
                 }
             }
@@ -410,7 +411,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Tests
 
         private static bool EvaluateCondition(IHostContext context, string condition)
         {
-            var expressionManager = new ExpressionManager(new TraceWriter(context));
+            var expressionManager = new ExpressionManager(new TraceWriter(context), new Dictionary<string, object>());
             return expressionManager.EvaluateCondition(condition);
         }
 

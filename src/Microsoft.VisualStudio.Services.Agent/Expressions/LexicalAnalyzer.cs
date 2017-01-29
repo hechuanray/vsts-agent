@@ -58,14 +58,25 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
                 case Constants.Separator:
                     token = new Token(TokenKind.Separator, _index++);
                     break;
-                case Constants.Dereference:
-                    token = new Token(TokenKind.Dereference, _index++);
-                    break;
                 case '\'':
                     token = ReadStringToken();
                     break;
                 default:
-                    if (c == '-' || c == '.' || (c >= '0' && c <= '9'))
+                    if (c == '.')
+                    {
+                        if (_lastToken == null ||
+                            _lastToken.Kind == TokenKind.Separator ||
+                            _lastToken.Kind == TokenKind.StartIndex ||
+                            _lastToken.Kind == TokenKind.StartParameter)
+                        {
+                            token = ReadNumberOrVersionToken();
+                        }
+                        else
+                        {
+                            token = new Token(TokenKind.Dereference, _index++);
+                        }
+                    }
+                    else if (c == '-' || (c >= '0' && c <= '9'))
                     {
                         token = ReadNumberOrVersionToken();
                     }

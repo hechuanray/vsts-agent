@@ -245,20 +245,11 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
 
         private void HandleValue()
         {
-            // Validate whether the token is expected.
-            bool expected = false;
-            if (_lastToken == null) // The first token.
-            {
-                expected = true;
-            }
-            else if (_lastToken.Kind == TokenKind.StartIndex || // Preceeded by opening punctuation
-                _lastToken.Kind == TokenKind.StartParameter ||  // or by a separator.
-                _lastToken.Kind == TokenKind.Separator)
-            {
-                expected = true;
-            }
-
-            if (!expected)
+            // Validate either A) is the first token OR B) follows "[" "(" or ",".
+            if (_lastToken != null &&
+                _lastToken.Kind != TokenKind.StartIndex &&
+                _lastToken.Kind != TokenKind.StartParameter &&
+                _lastToken.Kind != TokenKind.Separator)
             {
                 throw new ParseException(ParseExceptionKind.UnexpectedSymbol, _token, _raw);
             }
@@ -305,9 +296,11 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
 
         private void HandleFunction()
         {
-            // Validate follows "," or "[" or "(".
-            if (_lastToken == null ||
-                (_lastToken.Kind != TokenKind.Separator && _lastToken.Kind != TokenKind.StartIndex && _lastToken.Kind != TokenKind.StartParameter))
+            // Validate either A) is first token OR B) follows "," or "[" or "(".
+            if (_lastToken != null &&
+                (_lastToken.Kind != TokenKind.Separator &&
+                _lastToken.Kind != TokenKind.StartIndex &&
+                _lastToken.Kind != TokenKind.StartParameter))
             {
                 throw new ParseException(ParseExceptionKind.UnexpectedSymbol, _token, _raw);
             }
@@ -439,6 +432,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
             {
                 case ParseExceptionKind.ExpectedPropertyName:
                     description = "Expected property name to follow deference operator";
+                    break;
                 case ParseExceptionKind.ExpectedStartParameter:
                     description = "Expected '(' to follow function";
                     break;
