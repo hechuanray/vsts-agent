@@ -286,7 +286,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
         }
     }
 
-    internal sealed class LeafNode : Node
+    internal class LeafNode : Node
     {
         private readonly object _value;
         private readonly string _extensionName;

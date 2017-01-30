@@ -144,9 +144,24 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
 
         private void HandleStartIndex()
         {
-            // Validate follows an extension object, property name, or "]".
-            if (_lastToken == null ||
-                (_lastToken.Kind != TokenKind.ExtensionObject && _lastToken.Kind != TokenKind.PropertyName && _lastToken.Kind != TokenKind.EndIndex))
+            // Validate follows an extension dictionary object, a property name, or "]".
+            bool valid = false;
+            if (_lastToken != null)
+            {
+                switch (_lastToken.Kind)
+                {
+                    case TokenKind.ExtensionObject:
+                        string extensionName = _raw.Substring(_lastToken.Index, _lastToken.Length);
+                        valid = _extensionObjects[extensionName] is IDictionary<string, object>;
+                        break;
+                    case TokenKind.PropertyName:
+                    case TokenKind.EndIndex:
+                        valid = true;
+                        break;
+                }
+            }
+
+            if (!valid)
             {
                 throw new ParseException(ParseExceptionKind.UnexpectedSymbol, _token, _raw);
             }
@@ -175,9 +190,24 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
 
         private void HandleDereference()
         {
-            // Validate follows an extension object, property name, or "]".
-            if (_lastToken == null ||
-                (_lastToken.Kind != TokenKind.ExtensionObject && _lastToken.Kind != TokenKind.PropertyName && _lastToken.Kind != TokenKind.EndIndex))
+            // Validate follows an extension dictionary object, a property name, or "]".
+            bool valid = false;
+            if (_lastToken != null)
+            {
+                switch (_lastToken.Kind)
+                {
+                    case TokenKind.ExtensionObject:
+                        string extensionName = _raw.Substring(_lastToken.Index, _lastToken.Length);
+                        valid = _extensionObjects[extensionName] is IDictionary<string, object>;
+                        break;
+                    case TokenKind.PropertyName:
+                    case TokenKind.EndIndex:
+                        valid = true;
+                        break;
+                }
+            }
+
+            if (!valid)
             {
                 throw new ParseException(ParseExceptionKind.UnexpectedSymbol, _token, _raw);
             }
