@@ -250,7 +250,7 @@ function runtest ()
     rm -Rf Test/bin/${BUILD_CONFIG}/netcoreapp1.0/_diag
     pushd Test/bin/${BUILD_CONFIG}/netcoreapp1.0 > /dev/null
     pushd $(ls -d */ | grep -v '_')publish > /dev/null
-    ./corerun xunit.console.netcore.exe Test.dll -xml testresults.xml || failed "failed tests"
+    ./corerun xunit.console.netcore.exe Test.dll -xml testresults.xml -class Microsoft.VisualStudio.Services.Agent.Tests.ConditionL0 || failed "failed tests"
     popd > /dev/null
     popd > /dev/null
 }

@@ -35,11 +35,11 @@ TODO: (REVIEW) Note, changed spec to remove leading `@` from expression. A new c
 * Condition
  - When condition is selected, a condition builder area becomes visible. The customer has three inputs: Variable, Operator, Value. And a plus button to add additional conditions.
  - Conditions are and'ed
- - TODO: Implicitly `and(success(), <conditions>)` and don't show `agent.jobstatus` in the dropdown?
+ - TODO: Implicitly wrap `and(success(), ...)` and don't show `agent.jobstatus` in the dropdown?
  - TODO: Wrap `Value` in single-quotes, unless already contains a single-quote? (required to enable `In`)
 * Custom
  - When custom is selected, a text area becomes visible.
- - Evaluation will implicitly `and(success(), <expression>)` if agent.jobstatus variable or job status functions not referenced.
+ - Evaluation will implicitly wrap `and(success(), ...)` if agent.jobstatus variable or job status functions not referenced.
 
 ## Technical reference
 
