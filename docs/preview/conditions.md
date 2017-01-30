@@ -61,7 +61,7 @@ Note, only one `.` is present, then the value would be parsed as a number.
 #### String
 Single-quoted, e.g. 'this is a string' or ''
 
-Literal single-quote escaped by two single quotes, e.g. 'hey y''all'
+Literal single-quote escaped by two single quotes, e.g. 'all y''all'
 
 #### Dictionary (String =\> Any)
 Pre-defined dictionary objects are available depending on the context.
