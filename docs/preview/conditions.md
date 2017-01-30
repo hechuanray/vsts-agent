@@ -78,8 +78,8 @@ A complex orchestration-state object is available (String=\>Any and may contain 
 
 ##### Syntax to access values
 Two syntaxes are supported for accessing the values within a dictionary.
-* Index syntax - variables['Agent.JobStatus']
-* Property dereference syntax - variables.MyFancyVariable
+* Index syntax - `variables['Agent.JobStatus']`
+* Property dereference syntax - `variables.MyFancyVariable`
  - In order to use the property dereference syntax, the property name must adhere to the regex `^[a-zA-Z_][a-zA-Z0-9_]*$`
 
 Examples for complex objects:
@@ -88,7 +88,7 @@ Examples for complex objects:
 
 ##### Accessor rules
 * When an accessor (index or property-dereference syntax) is applied against a dictionary object and the key does not exist, null is returned.
-* When an accessor is applied against a non-dictionary object, the value will be cast to a dictionary object. Attempting to cast null will throw, all other types cast to an empty dictionary.
+* When an accessor is applied against a non-dictionary object, the value will be cast to a dictionary object. Attempting to cast from null throws, all other types cast to an empty dictionary.
  - TODO: The other option here is that ALL non-dictionary objects cast to an empty dictionary (including null). This means that `SomeObject.NoSuchKey.AlsoNoSuchKey.AlsoAlsoNoSuchKey` would not throw. This may be more appropriate since it does not require if-exists-branching to safely drill into a deep object. This is probably a better option for our scenario. There is also precedent in other languages (powershell).
 
 ##### Assumptions and limitations
@@ -97,7 +97,7 @@ Examples for complex objects:
 * TODO: (REVIEW) Custom dictionaries are not supported. Currently there is no use-case w.r.t. conditionals.
 
 #### Null
-Null is a special type that is returned from dictionary accessor misses. There is no keyword for null.
+Null is a special type that is returned from dictionary accessor misses only. There is no keyword for null.
 
 TODO: Probably easy to add null keyword if required, but is there a use case?
 
