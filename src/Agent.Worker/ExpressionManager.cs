@@ -1,5 +1,7 @@
+using System;
+using System.Collections.Generic;
 using Microsoft.VisualStudio.Services.Agent.Util;
-using Expressions = Microsoft.VisualStudio.Services.DistributedTask.Expressions;
+using DTExpressions = Microsoft.VisualStudio.Services.DistributedTask.Expressions;
 
 namespace Microsoft.VisualStudio.Services.Agent.Worker.Expressions
 {
@@ -17,64 +19,65 @@ namespace Microsoft.VisualStudio.Services.Agent.Worker.Expressions
 
             // Parse the condition.
             var expressionTrace = new TraceWriter(executionContext);
-            var parser = new Extension.Parser();
-            var extensions = new[]
+            var parser = new DTExpressions.Parser();
+            var extensions = new DTExpressions.IExtensionInfo[]
             {
-                new ExtensionInfo<AlwaysNode>(name: Constants.Expression.Always, minParameters: 0, maxParameters: 0),
-                new ExtensionInfo<SucceededNode>(name: Constants.Expression.Succeeded, minParameters: 0, maxParameters: 0),
-                new ExtensionInfo<SucceededOrFailedNode>(name: Constants.Expression.SuccededOrFailed, minParameters: 0, maxParameters: 0),
-                new ExtensionInfo<VariablesNode>(name: Constants.Expression.Variables, minParameters: 1, maxParameters: 1),
-            }
-            Expressions.Node tree = parser.CreateTree(condition, expressionTrace, extensions) ?? SuccededNode();
+                new DTExpressions.ExtensionInfo<AlwaysNode>(name: Constants.Expressions.Always, minParameters: 0, maxParameters: 0),
+                new DTExpressions.ExtensionInfo<SucceededNode>(name: Constants.Expressions.Succeeded, minParameters: 0, maxParameters: 0),
+                new DTExpressions.ExtensionInfo<SucceededOrFailedNode>(name: Constants.Expressions.SucceededOrFailed, minParameters: 0, maxParameters: 0),
+                new DTExpressions.ExtensionInfo<VariablesNode>(name: Constants.Expressions.Variables, minParameters: 1, maxParameters: 1),
+            };
+            DTExpressions.Node tree = parser.CreateTree(condition, expressionTrace, extensions) ?? new SucceededNode();
 
-            // Test whether Agent.JobStatus is referenced.
-            bool referencesJobStatus = false;
-            var nodes = new Stack<Expressions.Node>();
-            nodes.Push(tree);
-            while (nodes.Count > 0)
-            {
-                Expressions.Node node = nodes.Pop();
-                if (node is AlwaysNode || node is SucceededNode || node is SucceededOrFailedNode)
-                {
-                    referencesJobStatus = true;
-                    break;
-                }
-                else (node is VariablesNode && node.Parameters[0] is LeafNode)
-                {
-                    var parameter = node.Parameters[0] as Expressions.LeafNode;
-                    if (string.Equals(parameter.ParsedValue as string, "Agent.JobStatus", StringComparison.OrdinalIgnoreCase))
-                    {
-                        referencesJobStatus = true;
-                        break;
-                    }
-                }
+            // // Test whether Agent.JobStatus is referenced.
+            // bool referencesJobStatus = false;
+            // var nodes = new Stack<DTExpressions.Node>();
+            // nodes.Push(tree);
+            // while (nodes.Count > 0)
+            // {
+            //     DTExpressions.Node node = nodes.Pop();
+            //     if (node is AlwaysNode || node is SucceededNode || node is SucceededOrFailedNode)
+            //     {
+            //         referencesJobStatus = true;
+            //         break;
+            //     }
+            //     else if (node is VariablesNode)
+            //     {
+            //         var variablesNode = node as VariablesNode;
+            //         var leafParameter = variablesNode.Parameters[0] as DTExpressions.LeafNode;
+            //         if (leafParameter != null && string.Equals(leafParameter.Value as string, "Agent.JobStatus", StringComparison.OrdinalIgnoreCase))
+            //         {
+            //             referencesJobStatus = true;
+            //             break;
+            //         }
+            //     }
 
-                // Push parameters.
-                if (node is ContainerNode)
-                {
-                    foreach (Expressions.Node parameter in node.Parameters)
-                    {
-                        nodes.Push(parameter);
-                    }
-                }
-            }
+            //     // Push parameters.
+            //     if (node is DTExpressions.ContainerNode)
+            //     {
+            //         foreach (DTExpressions.Node parameter in (node as DTExpressions.ContainerNode).Parameters)
+            //         {
+            //             nodes.Push(parameter);
+            //         }
+            //     }
+            // }
 
-            // Wrap with "and(succeeded(), ...)" if Agent.JobStatus not referenced.
-            if (!referencesJobStatus)
-            {
-                executionContext.Verbose("Agent.JobStatus not refenced. Wrapping expression tree with 'and(succeeded(), ...)'");
-                var newTree = new Expressions.AndNode();
-                newTree.AddParameter(new SucceededNode());
-                newTree.AddParameters(tree);
-                tree = andNode;
-            }
+            // // Wrap with "and(succeeded(), ...)" if Agent.JobStatus not referenced.
+            // if (!referencesJobStatus)
+            // {
+            //     executionContext.Debug("Agent.JobStatus not refenced. Wrapping expression tree with 'and(succeeded(), ...)'");
+            //     var newTree = new DTExpressions.AndNode();
+            //     newTree.AddParameter(new SucceededNode());
+            //     newTree.AddParameter(tree);
+            //     tree = newTree;
+            // }
 
             // Evaluate the tree.
-            var evaluationContext = new EvaluationContext(expressionTrace, state: executionContext)
-            return tree.GetValueAsBool(evaluationContext);
+            var evaluationContext = new DTExpressions.EvaluationContext(expressionTrace, state: executionContext);
+            return tree.GetValueAsBoolean(evaluationContext);
         }
 
-        public sealed class TraceWriter : Expressions.ITraceWriter
+        public sealed class TraceWriter : DTExpressions.ITraceWriter
         {
             private readonly IExecutionContext _executionContext;
 
@@ -86,51 +89,57 @@ namespace Microsoft.VisualStudio.Services.Agent.Worker.Expressions
 
             public void Info(string message)
             {
-                _executionContext.Info(message);
+                _executionContext.Output(message);
             }
 
             public void Verbose(string message)
             {
-                _executionContext.Verbose(message);
+                _executionContext.Debug(message);
             }
         }
 
-        public sealed class AlwaysNode() : Expressions.FunctionNode
+        public sealed class AlwaysNode : DTExpressions.FunctionNode
         {
-            public override object GetValue(EvaluationContext evaluationContext)
+            protected sealed override string Name => Constants.Expressions.Always;
+
+            public override object GetValue(DTExpressions.EvaluationContext evaluationContext)
             {
                 throw new System.NotImplementedException();
             }
         }
 
-        public sealed class SucceededNode() : Expressions.FunctionNode
+        public sealed class SucceededNode : DTExpressions.FunctionNode
         {
-            public override object GetValue(EvaluationContext evaluationContext)
+            protected sealed override string Name => Constants.Expressions.Succeeded;
+
+            public override object GetValue(DTExpressions.EvaluationContext evaluationContext)
             {
                 throw new System.NotImplementedException();
             }
         }
 
-        public sealed class SucceededOrFailedNode() : Expressions.FunctionNode
+        public sealed class SucceededOrFailedNode : DTExpressions.FunctionNode
         {
-            public override object GetValue(EvaluationContext evaluationContext)
+            protected sealed override string Name => Constants.Expressions.SucceededOrFailed;
+
+            public override object GetValue(DTExpressions.EvaluationContext evaluationContext)
             {
                 throw new System.NotImplementedException();
             }
         }
 
-        public sealed class VariablesNode : Expressions.FunctionNode
+        public sealed class VariablesNode : DTExpressions.FunctionNode
         {
             protected sealed override string Name => Constants.Expressions.Variables;
 
-            public override object GetValue(EvaluationContext evaluationContext)
+            public override object GetValue(DTExpressions.EvaluationContext evaluationContext)
             {
                 TraceName(evaluationContext);
-                var executionContext = evaluationContext.State as IExecutionContext
+                var executionContext = evaluationContext.State as IExecutionContext;
                 ArgUtil.NotNull(executionContext, nameof(executionContext));
                 string variableName = Parameters[0].GetValueAsString(evaluationContext);
-                string item = executionContext.Variables.Get(variableName) ?? string.Empty;
-                TraceValue(context, result);
+                string result = executionContext.Variables.Get(variableName) ?? string.Empty;
+                TraceValue(evaluationContext, result);
                 return result;
             }
         }

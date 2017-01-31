@@ -1,4 +1,4 @@
-﻿namespace Microsoft.VisualStudio.Services.Agent.Expressions
+﻿namespace Microsoft.VisualStudio.Services.DistributedTask.Expressions
 {
     // todo: make internal
     public sealed class Token

@@ -4,7 +4,7 @@ using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
 
-namespace Microsoft.VisualStudio.Services.Agent.Expressions
+namespace Microsoft.VisualStudio.Services.DistributedTask.Expressions
 {
     internal sealed class LexicalAnalyzer
     {

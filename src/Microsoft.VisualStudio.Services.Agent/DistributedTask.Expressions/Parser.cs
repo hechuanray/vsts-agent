@@ -1,14 +1,15 @@
 ﻿using System;
 using System.Collections.Generic;
 
-namespace Microsoft.VisualStudio.Services.Agent.Expressions
+namespace Microsoft.VisualStudio.Services.DistributedTask.Expressions
 {
-    internal sealed class Parser
+    public sealed class Parser
     {
-        public Node CreateTree(string expression, ITraceWriter trace, IEnumerable<ExtensionInfo> extensions)
+        public Node CreateTree(string expression, ITraceWriter trace, IEnumerable<IExtensionInfo> extensions)
         {
             var context = new ParseContext(expression, trace, extensions);
             context.Trace.Verbose($"Entering {nameof(CreateTree)}");
+            context.Trace.Verbose($"Parsing [{expression}]");
             while (TryGetNextToken(context))
             {
                 switch (context.Token.Kind)
@@ -79,10 +80,11 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
                 }
             }
 
+            context.Trace.Verbose($"Leaving {nameof(CreateTree)}");
             return context.Root;
         }
 
-        private bool TryGetNextToken(ParseContext context)
+        private static bool TryGetNextToken(ParseContext context)
         {
             context.LastToken = context.Token;
             if (context.Lexer.TryGetNextToken(ref context.Token))
@@ -124,7 +126,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
             return false;
         }
 
-        private void HandleStartIndex(ParseContext context)
+        private static void HandleStartIndex(ParseContext context)
         {
             // Validate follows ")", "]", or a property name.
             if (context.LastToken == null ||
@@ -155,7 +157,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
             context.Containers.Push(new ContainerInfo() { Node = indexer, Token = context.Token });
         }
 
-        private void HandleDereference(ParseContext context)
+        private static void HandleDereference(ParseContext context)
         {
             // Validate follows ")", "]", or a property name.
             if (context.LastToken == null ||
@@ -198,12 +200,12 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
             indexer.AddParameter(new LeafNode(propertyName));
         }
 
-        private void HandleEndParameter(ParseContext context)
+        private static void HandleEndParameter(ParseContext context)
         {
             ContainerInfo container = context.Containers.Count > 0 ? context.Containers.Peek() : null;  // Validate:
             if (container == null ||                                                        // 1) Container is not null
                 !(container.Node is FunctionNode) ||                                        // 2) Container is a function
-                container.Node.Parameters.Count < GetMinParamCount(container.Token.Kind) || // 3) Not below min param threshold
+                container.Node.Parameters.Count < GetMinParamCount(context, container.Token) || // 3) Not below min param threshold
                 context.LastToken.Kind == TokenKind.Separator)                              // 4) Last token is not a separator
             {
                 throw new ParseException(ParseExceptionKind.UnexpectedSymbol, context.Token, context.Raw);
@@ -212,7 +214,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
             context.Containers.Pop();
         }
 
-        private void HandleEndIndex(ParseContext context)
+        private static void HandleEndIndex(ParseContext context)
         {
             IndexerNode indexer = context.Containers.Count > 0 ? context.Containers.Peek().Node as IndexerNode : null;
             //                                  // Validate:
@@ -225,7 +227,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
             context.Containers.Pop();
         }
 
-        private void HandleValue(ParseContext context)
+        private static void HandleValue(ParseContext context)
         {
             // Validate either A) is the first token OR B) follows "[" "(" or ",".
             if (context.LastToken != null &&
@@ -248,20 +250,20 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
             }
         }
 
-        private void HandleSeparator(ParseContext context)
+        private static void HandleSeparator(ParseContext context)
         {
             ContainerInfo container = context.Containers.Count > 0 ? context.Containers.Peek() : null;  // Validate:
             if (container == null ||                                                            // 1) Container is not null
                 !(container.Node is FunctionNode) ||                                            // 2) Container is a function
                 container.Node.Parameters.Count < 1 ||                                          // 3) At least one parameter
-                container.Node.Parameters.Count >= GetMaxParamCount(container.Token.Kind) ||    // 4) Under max parameters threshold
+                container.Node.Parameters.Count >= GetMaxParamCount(context, container.Token) ||// 4) Under max parameters threshold
                 context.LastToken.Kind == TokenKind.Separator)                                  // 5) Last token is not a separator
             {
                 throw new ParseException(ParseExceptionKind.UnexpectedSymbol, context.Token, context.Raw);
             }
         }
 
-        private void HandleFunction(ParseContext context)
+        private static void HandleFunction(ParseContext context)
         {
             // Validate either A) is first token OR B) follows "," or "[" or "(".
             if (context.LastToken != null &&
@@ -307,7 +309,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
                     node = new XorNode();
                     break;
                 case TokenKind.Extension:
-                    node = new ExtensionNode(context.Raw.Substring(context.Token.Index, context.Token.Length));
+                    node = context.Extensions[context.Raw.Substring(context.Token.Index, context.Token.Length)].CreateNode();
                     break;
                 default:
                     // Should never reach here.
@@ -334,9 +336,9 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
             }
         }
 
-        private static int GetMinParamCount(TokenKind kind)
+        private static int GetMinParamCount(ParseContext context, Token token)
         {
-            switch (kind)
+            switch (token.Kind)
             {
                 case TokenKind.Not:
                     return 1;
@@ -350,14 +352,17 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
                 case TokenKind.Or:
                 case TokenKind.Xor:
                     return 2;
+                case TokenKind.Extension:
+                    string name = context.Raw.Substring(token.Index, token.Length);
+                    return context.Extensions[name].MinParameters;
                 default: // Should never reach here.
-                    throw new NotSupportedException($"Unexpected token kind '{kind}'. Unable to determine min param count.");
+                    throw new NotSupportedException($"Unexpected token kind '{token.Kind}'. Unable to determine min param count.");
             }
         }
 
-        private static int GetMaxParamCount(TokenKind kind)
+        private static int GetMaxParamCount(ParseContext context, Token token)
         {
-            switch (kind)
+            switch (token.Kind)
             {
                 case TokenKind.Not:
                     return 1;
@@ -372,8 +377,11 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
                 case TokenKind.And:
                 case TokenKind.Or:
                     return int.MaxValue;
+                case TokenKind.Extension:
+                    string name = context.Raw.Substring(token.Index, token.Length);
+                    return context.Extensions[name].MaxParameters;
                 default: // Should never reach here.
-                    throw new NotSupportedException($"Unexpected token kind '{kind}'. Unable to determine max param count.");
+                    throw new NotSupportedException($"Unexpected token kind '{token.Kind}'. Unable to determine max param count.");
             }
         }
 
@@ -387,7 +395,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
         private sealed class ParseContext
         {
             public readonly Stack<ContainerInfo> Containers = new Stack<ContainerInfo>();
-            public readonly Dictionary<string, ExtensionInfo> Extensions = new Dictionary<string, ExtensionInfo>(StringComparer.OrdinalIgnoreCase);
+            public readonly Dictionary<string, IExtensionInfo> Extensions = new Dictionary<string, IExtensionInfo>(StringComparer.OrdinalIgnoreCase);
             public readonly LexicalAnalyzer Lexer;
             public readonly string Raw;
             public readonly ITraceWriter Trace;
@@ -395,12 +403,12 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
             public Token LastToken;
             public Node Root;
 
-            public ParseContext(string expression, ITraceWriter trace, IEnumerable<ExtensionInfo> extensions)
+            public ParseContext(string expression, ITraceWriter trace, IEnumerable<IExtensionInfo> extensions)
             {
                 ArgUtil.NotNull(trace, nameof(trace));
                 Raw = expression ?? string.Empty;
                 Trace = trace;
-                foreach (ExtensionInfo extension in (extensions ?? new ExtensionInfo[0]))
+                foreach (IExtensionInfo extension in (extensions ?? new IExtensionInfo[0]))
                 {
                     Extensions.Add(extension.Name, extension);
                 }

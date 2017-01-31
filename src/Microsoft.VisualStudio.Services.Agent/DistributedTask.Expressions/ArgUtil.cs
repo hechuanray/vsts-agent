@@ -1,6 +1,6 @@
 using System;
 
-namespace Microsoft.VisualStudio.Services.Agent.Expressions
+namespace Microsoft.VisualStudio.Services.DistributedTask.Expressions
 {
     public static class ArgUtil
     {

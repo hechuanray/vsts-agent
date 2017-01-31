@@ -14,12 +14,21 @@ namespace Microsoft.VisualStudio.Services.DistributedTask.Expressions
             State = state;
         }
 
-        public object State { get; }
-
         public ITraceWriter Trace { get; }
+
+        public object State { get; }
     }
 
-    public sealed class ExtensionInfo<T> where T : FunctionNode, new()
+    public interface IExtensionInfo
+    {
+        string Name { get; }
+        int MinParameters { get; }
+        int MaxParameters { get; }
+        FunctionNode CreateNode();
+    }
+
+    public sealed class ExtensionInfo<T> : IExtensionInfo
+        where T : FunctionNode, new()
     {
         public ExtensionInfo(string name, int minParameters, int maxParameters)
         {
@@ -34,7 +43,7 @@ namespace Microsoft.VisualStudio.Services.DistributedTask.Expressions
 
         public int MaxParameters { get; }
 
-        internal T Create()
+        public FunctionNode CreateNode()
         {
             return new T();
         }
