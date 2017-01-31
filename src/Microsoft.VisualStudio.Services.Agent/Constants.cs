@@ -155,6 +155,14 @@ namespace Microsoft.VisualStudio.Services.Agent
             public static readonly string GatedRunCI = "GatedRunCI";
         }
 
+        public static class Expressions
+        {
+            public static readonly string Always = "always";
+            public static readonly string Succeeded = "succeeded";
+            public static readonly string SucceededOrFailed = "succeededOrFailed";
+            public static readonly string Variables = "variables";
+        }
+
         public static class Path
         {
             public static readonly string BinDirectory = "bin";

@@ -23,10 +23,4 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
         public const string Or = "or";
         public const string Xor = "xor";
     }
-
-    public interface ITraceWriter
-    {
-        void Info(string message);
-        void Verbose(string message);
-    }
 }

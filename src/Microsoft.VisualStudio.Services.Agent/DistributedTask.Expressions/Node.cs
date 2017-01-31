@@ -3,7 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 
-namespace Microsoft.VisualStudio.Services.Agent.Expressions
+namespace Microsoft.VisualStudio.Services.DistributedTask.Expressions
 {
     public abstract class Node
     {
@@ -284,7 +284,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
         }
     }
 
-    internal class LeafNode : Node
+    public class LeafNode : Node
     {
         private readonly object _value;
 
@@ -300,7 +300,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
         }
     }
 
-    public abstract class ContainerNode : Node
+    internal abstract class ContainerNode : Node
     {
         private readonly List<Node> _parameters = new List<Node>();
 
@@ -349,33 +349,13 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
         }
     }
 
-    internal abstract class FunctionNode : ContainerNode
+    public abstract class FunctionNode : ContainerNode
     {
-        protected abstract string Name { get; }
+        public abstract string Name { get; }
 
         protected void TraceName(EvaluationContext context)
         {
             TraceInfo(context, $"{Name} (Function)");
-        }
-    }
-
-    internal sealed class ExtensionNode : FunctionNode
-    {
-        public ExtensionNode(string name)
-        {
-            Name = name;
-        }
-
-        protected sealed override string Name { get; }
-
-        public sealed override object GetValue(EvaluationContext context)
-        {
-            TraceName(context);
-            object item = context.Extensions[Name];
-            string property = Parameters[0].GetValueAsString(context);
-            object result = GetItemProperty(item, property);
-            TraceValue(context, result);
-            return result;
         }
     }
 

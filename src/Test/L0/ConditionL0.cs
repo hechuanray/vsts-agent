@@ -1,5 +1,5 @@
 using System.Collections.Generic;
-using Microsoft.VisualStudio.Services.Agent.Expressions;
+using Microsoft.VisualStudio.Services.DistributedTask.Expressions;
 using Xunit;
 
 namespace Microsoft.VisualStudio.Services.Agent.Tests

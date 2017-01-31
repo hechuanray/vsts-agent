@@ -410,22 +410,6 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
         }
     }
 
-    public class ExtensionInfo
-    {
-        public ExtensionInfo(string name, int minParameters, int maxParameters)
-        {
-            Name = name;
-            MinParameters = minParameters;
-            MaxParameters = maxParameters;
-        }
-
-        public string Name { get; }
-
-        public int MinParameters { get; }
-
-        public int MaxParameters { get; }
-    }
-
     // todo: make internal
     public sealed class ParseException : Exception
     {
