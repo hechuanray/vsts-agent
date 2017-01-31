@@ -5,7 +5,7 @@ using System.Globalization;
 
 namespace Microsoft.VisualStudio.Services.Agent.Expressions
 {
-    internal abstract class Node
+    public abstract class Node
     {
         private static readonly NumberStyles NumberStyles =
             NumberStyles.AllowDecimalPoint |
@@ -13,22 +13,16 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
             NumberStyles.AllowLeadingWhite |
             NumberStyles.AllowThousands |
             NumberStyles.AllowTrailingWhite;
-        private readonly ITraceWriter _trace;
 
-        public Node(ITraceWriter trace)
+        public abstract object GetValue(EvaluationContext context);
+
+        internal ContainerNode Container { get; set; }
+
+        internal int Level { get; set; }
+
+        public bool GetValueAsBool(EvaluationContext context)
         {
-            _trace = trace;
-        }
-
-        public ContainerNode Container { get; set; }
-
-        public int Level { get; set; }
-
-        public abstract object GetValue();
-
-        public bool GetValueAsBool()
-        {
-            object val = GetValue();
+            object val = GetValue(context);
             bool result;
             if (val is bool)
             {
@@ -37,25 +31,25 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
             else if (val is decimal)
             {
                 result = (decimal)val != 0m; // 0 converts to false, otherwise true.
-                TraceValue(result);
+                TraceValue(context, result);
             }
             else if (val is Version)
             {
                 result = true;
-                TraceValue(result);
+                TraceValue(context, result);
             }
             else
             {
                 result = !string.IsNullOrEmpty(val as string);
-                TraceValue(result);
+                TraceValue(context, result);
             }
 
             return result;
         }
 
-        public decimal GetValueAsNumber()
+        public decimal GetValueAsNumber(EvaluationContext context)
         {
-            object val = GetValue();
+            object val = GetValue(context);
             if (val is decimal)
             {
                 return (decimal)val;
@@ -64,34 +58,38 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
             decimal d;
             if (TryConvertToNumber(val, out d))
             {
-                TraceValue(d);
+                TraceValue(context, d);
                 return d;
             }
             else if (val is Version)
             {
                 throw new ConvertException(val, ValueKind.Number);
             }
-
-            Exception inner = null;
-            try
+            else if (val is string && !string.IsNullOrEmpty(val as string))
             {
-                decimal.Parse(
-                    val as string ?? string.Empty,
-                    NumberStyles,
-                    CultureInfo.InvariantCulture);
-            }
-            catch (Exception ex)
-            {
-                inner = ex;
+                Exception inner = null;
+                try
+                {
+                    decimal.Parse(
+                        val as string ?? string.Empty,
+                        NumberStyles,
+                        CultureInfo.InvariantCulture);
+                }
+                catch (Exception ex)
+                {
+                    inner = ex;
+                }
+
+                throw new ConvertException(val, ValueKind.Number, inner);
             }
 
-            throw new ConvertException(val, ValueKind.Number, inner);
+            return 0;
         }
 
-        public string GetValueAsString()
+        public string GetValueAsString(EvaluationContext context)
         {
             string result;
-            object val = GetValue();
+            object val = GetValue(context);
             if (object.ReferenceEquals(val, null) || val is string)
             {
                 result = val as string;
@@ -99,7 +97,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
             else if (val is bool)
             {
                 result = string.Format(CultureInfo.InvariantCulture, "{0}", val);
-                TraceValue(result);
+                TraceValue(context, result);
             }
             else if (val is decimal)
             {
@@ -110,21 +108,21 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
                     result = result.TrimEnd('0').TrimEnd('.'); // Omit trailing zeros after the decimal point.
                 }
 
-                TraceValue(result);
+                TraceValue(context, result);
             }
             else
             {
                 Version v = val as Version;
                 result = v.ToString();
-                TraceValue(result);
+                TraceValue(context, result);
             }
 
             return result;
         }
 
-        public Version GetValueAsVersion()
+        public Version GetValueAsVersion(EvaluationContext context)
         {
-            object val = GetValue();
+            object val = GetValue(context);
             if (val is Version)
             {
                 return val as Version;
@@ -133,7 +131,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
             Version v;
             if (TryConvertToVersion(val, out v))
             {
-                TraceValue(v);
+                TraceValue(context, v);
                 return v;
             }
 
@@ -155,9 +153,9 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
             throw new ConvertException(val, ValueKind.Version, inner);
         }
 
-        public bool TryGetValueAsNumber(out decimal result)
+        public bool TryGetValueAsNumber(EvaluationContext context, out decimal result)
         {
-            object val = GetValue();
+            object val = GetValue(context);
             if (val is decimal)
             {
                 result = (decimal)val;
@@ -166,17 +164,17 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
 
             if (TryConvertToNumber(val, out result))
             {
-                TraceValue(result);
+                TraceValue(context, result);
                 return true;
             }
 
-            TraceValue(val: null, isUnconverted: false, conversionSoftFailed: "Unable to convert to Number");
+            TraceValue(context, val: null, isUnconverted: false, conversionSoftFailed: "Unable to convert to Number");
             return false;
         }
 
-        public bool TryGetValueAsVersion(out Version result)
+        public bool TryGetValueAsVersion(EvaluationContext context, out Version result)
         {
-            object val = GetValue();
+            object val = GetValue(context);
             if (val is Version)
             {
                 result = (Version)val;
@@ -185,33 +183,28 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
 
             if (TryConvertToVersion(val, out result))
             {
-                TraceValue(result);
+                TraceValue(context, result);
                 return true;
             }
 
-            TraceValue(val: null, isUnconverted: false, conversionSoftFailed: "Unable to convert to Version");
+            TraceValue(context, val: null, isUnconverted: false, conversionSoftFailed: "Unable to convert to Version");
             return false;
         }
 
-        protected void TraceInfo(string message)
+        protected void TraceInfo(EvaluationContext context, string message)
         {
-            _trace.Info(string.Empty.PadLeft(Level * 2, '.') + (message ?? string.Empty));
+            context.Trace.Info(string.Empty.PadLeft(Level * 2, '.') + (message ?? string.Empty));
         }
 
-        protected void TraceValue(object val, bool isUnconverted = false, string conversionSoftFailed = "", string extensionName = "")
+        protected void TraceValue(EvaluationContext context, object val, bool isUnconverted = false, string conversionSoftFailed = "")
         {
             string prefix = isUnconverted ? string.Empty : "=> ";
             if (!string.IsNullOrEmpty(conversionSoftFailed))
             {
-                TraceInfo(StringUtil.Format("{0}{1}", prefix, conversionSoftFailed));
+                TraceInfo(context, StringUtil.Format("{0}{1}", prefix, conversionSoftFailed));
             }
 
             ValueKind kind;
-            if (val is IDictionary<string, object>)
-            {
-                val = !string.IsNullOrEmpty(extensionName) ? extensionName : "Object";
-                kind = ValueKind.Object;
-            }
             if (val is bool)
             {
                 kind = ValueKind.Boolean;
@@ -224,12 +217,17 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
             {
                 kind = ValueKind.Version;
             }
-            else
+            else if (val is string)
             {
                 kind = ValueKind.String;
             }
+            else
+            {
+                val = "Object";
+                kind = ValueKind.Object;
+            }
 
-            TraceInfo(String.Format(CultureInfo.InvariantCulture, "{0}{1} ({2})", prefix, val, kind));
+            TraceInfo(context, String.Format(CultureInfo.InvariantCulture, "{0}{1} ({2})", prefix, val, kind));
         }
 
         private bool TryConvertToNumber(object val, out decimal result)
@@ -289,30 +287,22 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
     internal class LeafNode : Node
     {
         private readonly object _value;
-        private readonly string _extensionName;
 
-        public LeafNode(object val, string extensionName, ITraceWriter trace)
-            : base(trace)
+        public LeafNode(object val)
         {
             _value = val;
-            _extensionName = extensionName;
         }
 
-        public sealed override object GetValue()
+        public sealed override object GetValue(EvaluationContext context)
         {
-            TraceValue(_value, isUnconverted: true, conversionSoftFailed: string.Empty, extensionName: _extensionName);
+            TraceValue(context, _value, isUnconverted: true, conversionSoftFailed: string.Empty);
             return _value;
         }
     }
 
-    internal abstract class ContainerNode : Node
+    public abstract class ContainerNode : Node
     {
         private readonly List<Node> _parameters = new List<Node>();
-
-        public ContainerNode(ITraceWriter trace)
-            : base(trace)
-        {
-        }
 
         public IReadOnlyList<Node> Parameters => _parameters.AsReadOnly();
 
@@ -329,126 +319,136 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
             node.Container = this;
             node.Level = Level + 1;
         }
+
+        protected object GetItemProperty(object item, string property)
+        {
+            if (item is IDictionary<string, object>)
+            {
+                var dictionary = item as IDictionary<string, object>;
+                object result;
+                if (dictionary.TryGetValue(property ?? string.Empty, out result))
+                {
+                    return result;
+                }
+            }
+
+            return null;
+        }
     }
 
     internal sealed class IndexerNode : ContainerNode
     {
-        public IndexerNode(ITraceWriter trace)
-            : base(trace)
+        public sealed override object GetValue(EvaluationContext context)
         {
-        }
-
-        public override object GetValue()
-        {
-            throw new NotImplementedException(); // todo
+            TraceInfo(context, $"GetItemProperty");
+            object item = Parameters[0].GetValue(context);
+            string property = Parameters[1].GetValueAsString(context);
+            object result = GetItemProperty(item, property);
+            TraceValue(context, result);
+            return result;
         }
     }
 
     internal abstract class FunctionNode : ContainerNode
     {
-        public FunctionNode(ITraceWriter trace)
-            : base(trace)
-        {
-        }
-
         protected abstract string Name { get; }
 
-        protected void TraceName()
+        protected void TraceName(EvaluationContext context)
         {
-            TraceInfo($"{Name} (Function)");
+            TraceInfo(context, $"{Name} (Function)");
+        }
+    }
+
+    internal sealed class ExtensionNode : FunctionNode
+    {
+        public ExtensionNode(string name)
+        {
+            Name = name;
+        }
+
+        protected sealed override string Name { get; }
+
+        public sealed override object GetValue(EvaluationContext context)
+        {
+            TraceName(context);
+            object item = context.Extensions[Name];
+            string property = Parameters[0].GetValueAsString(context);
+            object result = GetItemProperty(item, property);
+            TraceValue(context, result);
+            return result;
         }
     }
 
     internal sealed class AndNode : FunctionNode
     {
-        public AndNode(ITraceWriter trace)
-            : base(trace)
-        {
-        }
-
         protected sealed override string Name => "And";
 
-        public sealed override object GetValue()
+        public sealed override object GetValue(EvaluationContext context)
         {
-            TraceName();
+            TraceName(context);
             bool result = true;
             foreach (Node parameter in Parameters)
             {
-                if (!parameter.GetValueAsBool())
+                if (!parameter.GetValueAsBool(context))
                 {
                     result = false;
                     break;
                 }
             }
 
-            TraceValue(result);
+            TraceValue(context, result);
             return result;
         }
     }
 
     internal sealed class ContainsNode : FunctionNode
     {
-        public ContainsNode(ITraceWriter trace)
-            : base(trace)
-        {
-        }
-
         protected sealed override string Name => "Contains";
 
-        public override object GetValue()
+        public override object GetValue(EvaluationContext context)
         {
-            TraceName();
-            string left = Parameters[0].GetValueAsString() ?? string.Empty;
-            string right = Parameters[1].GetValueAsString() ?? string.Empty;
+            TraceName(context);
+            string left = Parameters[0].GetValueAsString(context) ?? string.Empty;
+            string right = Parameters[1].GetValueAsString(context) ?? string.Empty;
             bool result = left.IndexOf(right, StringComparison.OrdinalIgnoreCase) >= 0;
-            TraceValue(result);
+            TraceValue(context, result);
             return result;
         }
     }
 
     internal sealed class EndsWithNode : FunctionNode
     {
-        public EndsWithNode(ITraceWriter trace)
-            : base(trace)
-        {
-        }
-
         protected sealed override string Name => "EndsWith";
 
-        public override object GetValue()
+        public override object GetValue(EvaluationContext context)
         {
-            TraceName();
-            string left = Parameters[0].GetValueAsString() ?? string.Empty;
-            string right = Parameters[1].GetValueAsString() ?? string.Empty;
+            TraceName(context);
+            string left = Parameters[0].GetValueAsString(context) ?? string.Empty;
+            string right = Parameters[1].GetValueAsString(context) ?? string.Empty;
             bool result = left.EndsWith(right, StringComparison.OrdinalIgnoreCase);
-            TraceValue(result);
+            TraceValue(context, result);
             return result;
         }
     }
 
     internal sealed class EqualNode : FunctionNode
     {
-        public EqualNode(ITraceWriter trace)
-            : base(trace)
-        {
-        }
-
         protected sealed override string Name => "Equal";
 
-        public override object GetValue()
+        public override object GetValue(EvaluationContext context)
         {
-            TraceName();
+            TraceName(context);
             bool result;
-            object left = Parameters[0].GetValue();
+            object left = Parameters[0].GetValue(context);
             if (left is bool)
             {
-                bool right = Parameters[1].GetValueAsBool();
+                bool right = Parameters[1].GetValueAsBool(context);
                 result = (bool)left == right;
             }
             else if (left is decimal)
             {
                 decimal right;
-                if (Parameters[1].TryGetValueAsNumber(out right))
+                if (Parameters[1].TryGetValueAsNumber(context, out right))
                 {
                     result = (decimal)left == right;
                 }
@@ -460,7 +460,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
             else if (left is Version)
             {
                 Version right;
-                if (Parameters[1].TryGetValueAsVersion(out right))
+                if (Parameters[1].TryGetValueAsVersion(context, out right))
                 {
                     result = (Version)left == right;
                 }
@@ -471,123 +471,108 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
             }
             else
             {
-                string right = Parameters[1].GetValueAsString();
+                string right = Parameters[1].GetValueAsString(context);
                 result = string.Equals(
                     left as string ?? string.Empty,
                     right ?? string.Empty,
                     StringComparison.OrdinalIgnoreCase);
             }
 
-            TraceValue(result);
+            TraceValue(context, result);
             return result;
         }
     }
 
     internal sealed class GreaterThanNode : FunctionNode
     {
-        public GreaterThanNode(ITraceWriter trace)
-            : base(trace)
-        {
-        }
-
         protected sealed override string Name => "GreaterThan";
 
-        public sealed override object GetValue()
+        public sealed override object GetValue(EvaluationContext context)
         {
-            TraceName();
+            TraceName(context);
             bool result;
-            object left = Parameters[0].GetValue();
+            object left = Parameters[0].GetValue(context);
             if (left is bool)
             {
-                bool right = Parameters[1].GetValueAsBool();
+                bool right = Parameters[1].GetValueAsBool(context);
                 result = ((bool)left).CompareTo(right) > 0;
             }
             else if (left is decimal)
             {
-                decimal right = Parameters[1].GetValueAsNumber();
+                decimal right = Parameters[1].GetValueAsNumber(context);
                 result = ((decimal)left).CompareTo(right) > 0;
             }
             else if (left is Version)
             {
-                Version right = Parameters[1].GetValueAsVersion();
+                Version right = Parameters[1].GetValueAsVersion(context);
                 result = (left as Version).CompareTo(right) > 0;
             }
             else
             {
-                string right = Parameters[1].GetValueAsString();
+                string right = Parameters[1].GetValueAsString(context);
                 result = string.Compare(left as string ?? string.Empty, right ?? string.Empty, StringComparison.OrdinalIgnoreCase) > 0;
             }
 
-            TraceValue(result);
+            TraceValue(context, result);
             return result;
         }
     }
 
     internal sealed class GreaterThanOrEqualNode : FunctionNode
     {
-        public GreaterThanOrEqualNode(ITraceWriter trace)
-            : base(trace)
-        {
-        }
-
         protected sealed override string Name => "GreaterThanOrEqual";
 
-        public sealed override object GetValue()
+        public sealed override object GetValue(EvaluationContext context)
         {
-            TraceName();
+            TraceName(context);
             bool result;
-            object left = Parameters[0].GetValue();
+            object left = Parameters[0].GetValue(context);
             if (left is bool)
             {
-                bool right = Parameters[1].GetValueAsBool();
+                bool right = Parameters[1].GetValueAsBool(context);
                 result = ((bool)left).CompareTo(right) >= 0;
             }
             else if (left is decimal)
             {
-                decimal right = Parameters[1].GetValueAsNumber();
+                decimal right = Parameters[1].GetValueAsNumber(context);
                 result = ((decimal)left).CompareTo(right) >= 0;
             }
             else if (left is Version)
             {
-                Version right = Parameters[1].GetValueAsVersion();
+                Version right = Parameters[1].GetValueAsVersion(context);
                 result = (left as Version).CompareTo(right) >= 0;
             }
             else
             {
-                string right = Parameters[1].GetValueAsString();
+                string right = Parameters[1].GetValueAsString(context);
                 result = string.Compare(left as string ?? string.Empty, right ?? string.Empty, StringComparison.OrdinalIgnoreCase) >= 0;
             }
 
-            TraceValue(result);
+            TraceValue(context, result);
             return result;
         }
     }
 
     internal sealed class InNode : FunctionNode
     {
-        public InNode(ITraceWriter trace)
-            : base(trace)
-        {
-        }
-
         protected sealed override string Name => "In";
 
-        public override object GetValue()
+        public override object GetValue(EvaluationContext context)
         {
-            TraceName();
+            TraceName(context);
             bool result = false;
-            object left = Parameters[0].GetValue();
+            object left = Parameters[0].GetValue(context);
             for (int i = 1; i < Parameters.Count; i++)
             {
                 if (left is bool)
                 {
-                    bool right = Parameters[i].GetValueAsBool();
+                    bool right = Parameters[i].GetValueAsBool(context);
                     result = (bool)left == right;
                 }
                 else if (left is decimal)
                 {
                     decimal right;
-                    if (Parameters[i].TryGetValueAsNumber(out right))
+                    if (Parameters[i].TryGetValueAsNumber(context, out right))
                     {
                         result = (decimal)left == right;
                     }
@@ -599,7 +584,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
                 else if (left is Version)
                 {
                     Version right;
-                    if (Parameters[i].TryGetValueAsVersion(out right))
+                    if (Parameters[i].TryGetValueAsVersion(context, out right))
                     {
                         result = (Version)left == right;
                     }
@@ -610,7 +595,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
                 }
                 else
                 {
-                    string right = Parameters[i].GetValueAsString();
+                    string right = Parameters[i].GetValueAsString(context);
                     result = string.Equals(
                         left as string ?? string.Empty,
                         right ?? string.Empty,
@@ -623,114 +608,99 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
                 }
             }
 
-            TraceValue(result);
+            TraceValue(context, result);
             return result;
         }
     }
 
     internal sealed class LessThanNode : FunctionNode
     {
-        public LessThanNode(ITraceWriter trace)
-            : base(trace)
-        {
-        }
-
         protected sealed override string Name => "LessThan";
 
-        public sealed override object GetValue()
+        public sealed override object GetValue(EvaluationContext context)
         {
-            TraceName();
+            TraceName(context);
             bool result;
-            object left = Parameters[0].GetValue();
+            object left = Parameters[0].GetValue(context);
             if (left is bool)
             {
-                bool right = Parameters[1].GetValueAsBool();
+                bool right = Parameters[1].GetValueAsBool(context);
                 result = ((bool)left).CompareTo(right) < 0;
             }
             else if (left is decimal)
             {
-                decimal right = Parameters[1].GetValueAsNumber();
+                decimal right = Parameters[1].GetValueAsNumber(context);
                 result = ((decimal)left).CompareTo(right) < 0;
             }
             else if (left is Version)
             {
-                Version right = Parameters[1].GetValueAsVersion();
+                Version right = Parameters[1].GetValueAsVersion(context);
                 result = (left as Version).CompareTo(right) < 0;
             }
             else
             {
-                string right = Parameters[1].GetValueAsString();
+                string right = Parameters[1].GetValueAsString(context);
                 result = string.Compare(left as string ?? string.Empty, right ?? string.Empty, StringComparison.OrdinalIgnoreCase) < 0;
             }
 
-            TraceValue(result);
+            TraceValue(context, result);
             return result;
         }
     }
 
     internal sealed class LessThanOrEqualNode : FunctionNode
     {
-        public LessThanOrEqualNode(ITraceWriter trace)
-            : base(trace)
-        {
-        }
-
         protected sealed override string Name => "LessThanOrEqual";
 
-        public sealed override object GetValue()
+        public sealed override object GetValue(EvaluationContext context)
         {
-            TraceName();
+            TraceName(context);
             bool result;
-            object left = Parameters[0].GetValue();
+            object left = Parameters[0].GetValue(context);
             if (left is bool)
             {
-                bool right = Parameters[1].GetValueAsBool();
+                bool right = Parameters[1].GetValueAsBool(context);
                 result = ((bool)left).CompareTo(right) <= 0;
             }
             else if (left is decimal)
             {
-                decimal right = Parameters[1].GetValueAsNumber();
+                decimal right = Parameters[1].GetValueAsNumber(context);
                 result = ((decimal)left).CompareTo(right) <= 0;
             }
             else if (left is Version)
             {
-                Version right = Parameters[1].GetValueAsVersion();
+                Version right = Parameters[1].GetValueAsVersion(context);
                 result = (left as Version).CompareTo(right) <= 0;
             }
             else
             {
-                string right = Parameters[1].GetValueAsString();
+                string right = Parameters[1].GetValueAsString(context);
                 result = string.Compare(left as string ?? string.Empty, right ?? string.Empty, StringComparison.OrdinalIgnoreCase) <= 0;
             }
 
-            TraceValue(result);
+            TraceValue(context, result);
             return result;
         }
     }
 
     internal sealed class NotEqualNode : FunctionNode
     {
-        public NotEqualNode(ITraceWriter trace)
-            : base(trace)
-        {
-        }
-
         protected sealed override string Name => "NotEqual";
 
-        public sealed override object GetValue()
+        public sealed override object GetValue(EvaluationContext context)
         {
-            TraceName();
+            TraceName(context);
             bool result;
-            object left = Parameters[0].GetValue();
+            object left = Parameters[0].GetValue(context);
             if (left is bool)
             {
-                bool right = Parameters[1].GetValueAsBool();
+                bool right = Parameters[1].GetValueAsBool(context);
                 result = (bool)left != right;
             }
             else if (left is decimal)
             {
                 decimal right;
-                if (Parameters[1].TryGetValueAsNumber(out right))
+                if (Parameters[1].TryGetValueAsNumber(context, out right))
                 {
                     result = (decimal)left != right;
                 }
@@ -742,7 +712,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
             else if (left is Version)
             {
                 Version right;
-                if (Parameters[1].TryGetValueAsVersion(out right))
+                if (Parameters[1].TryGetValueAsVersion(context, out right))
                 {
                     result = (Version)left != right;
                 }
@@ -753,61 +723,51 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
             }
             else
             {
-                string right = Parameters[1].GetValueAsString();
+                string right = Parameters[1].GetValueAsString(context);
                 result = !string.Equals(
                     left as string ?? string.Empty,
                     right ?? string.Empty,
                     StringComparison.OrdinalIgnoreCase);
             }
 
-            TraceValue(result);
+            TraceValue(context, result);
             return result;
         }
     }
 
     internal sealed class NotNode : FunctionNode
     {
-        public NotNode(ITraceWriter trace)
-            : base(trace)
-        {
-        }
-
         protected sealed override string Name => "Not";
 
-        public sealed override object GetValue()
+        public sealed override object GetValue(EvaluationContext context)
         {
-            TraceName();
-            bool result = !Parameters[0].GetValueAsBool();
-            TraceValue(result);
+            TraceName(context);
+            bool result = !Parameters[0].GetValueAsBool(context);
+            TraceValue(context, result);
             return result;
         }
     }
 
     internal sealed class NotInNode : FunctionNode
     {
-        public NotInNode(ITraceWriter trace)
-            : base(trace)
-        {
-        }
-
         protected sealed override string Name => "NotIn";
 
-        public sealed override object GetValue()
+        public sealed override object GetValue(EvaluationContext context)
         {
-            TraceName();
+            TraceName(context);
             bool found = false;
-            object left = Parameters[0].GetValue();
+            object left = Parameters[0].GetValue(context);
             for (int i = 1; i < Parameters.Count; i++)
             {
                 if (left is bool)
                 {
-                    bool right = Parameters[i].GetValueAsBool();
+                    bool right = Parameters[i].GetValueAsBool(context);
                     found = (bool)left == right;
                 }
                 else if (left is decimal)
                 {
                     decimal right;
-                    if (Parameters[i].TryGetValueAsNumber(out right))
+                    if (Parameters[i].TryGetValueAsNumber(context, out right))
                     {
                         found = (decimal)left == right;
                     }
@@ -819,7 +779,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
                 else if (left is Version)
                 {
                     Version right;
-                    if (Parameters[i].TryGetValueAsVersion(out right))
+                    if (Parameters[i].TryGetValueAsVersion(context, out right))
                     {
                         found = (Version)left == right;
                     }
@@ -830,7 +790,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
                 }
                 else
                 {
-                    string right = Parameters[i].GetValueAsString();
+                    string right = Parameters[i].GetValueAsString(context);
                     found = string.Equals(
                         left as string ?? string.Empty,
                         right ?? string.Empty,
@@ -844,72 +804,57 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
             }
 
             bool result = !found;
-            TraceValue(result);
+            TraceValue(context, result);
             return result;
         }
     }
 
     internal sealed class OrNode : FunctionNode
     {
-        public OrNode(ITraceWriter trace)
-            : base(trace)
-        {
-        }
-
         protected sealed override string Name => "Or";
 
-        public sealed override object GetValue()
+        public sealed override object GetValue(EvaluationContext context)
         {
-            TraceName();
+            TraceName(context);
             bool result = false;
             foreach (Node parameter in Parameters)
             {
-                if (parameter.GetValueAsBool())
+                if (parameter.GetValueAsBool(context))
                 {
                     result = true;
                     break;
                 }
             }
 
-            TraceValue(result);
+            TraceValue(context, result);
             return result;
         }
     }
 
     internal sealed class StartsWithNode : FunctionNode
     {
-        public StartsWithNode(ITraceWriter trace)
-            : base(trace)
-        {
-        }
-
         protected sealed override string Name => "StartsWith";
 
-        public override object GetValue()
+        public override object GetValue(EvaluationContext context)
         {
-            TraceName();
-            string left = Parameters[0].GetValueAsString() ?? string.Empty;
-            string right = Parameters[1].GetValueAsString() ?? string.Empty;
+            TraceName(context);
+            string left = Parameters[0].GetValueAsString(context) ?? string.Empty;
+            string right = Parameters[1].GetValueAsString(context) ?? string.Empty;
             bool result = left.StartsWith(right, StringComparison.OrdinalIgnoreCase);
-            TraceValue(result);
+            TraceValue(context, result);
             return result;
         }
     }
 
     internal sealed class XorNode : FunctionNode
     {
-        public XorNode(ITraceWriter trace)
-            : base(trace)
-        {
-        }
-
         protected sealed override string Name => "Xor";
 
-        public sealed override object GetValue()
+        public sealed override object GetValue(EvaluationContext context)
         {
-            TraceName();
-            bool result = Parameters[0].GetValueAsBool() ^ Parameters[1].GetValueAsBool();
-            TraceValue(result);
+            TraceName(context);
+            bool result = Parameters[0].GetValueAsBool(context) ^ Parameters[1].GetValueAsBool(context);
+            TraceValue(context, result);
             return result;
         }
     }
@@ -969,5 +914,19 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
             // TODO: loc
             return kind.ToString();
         }
+    }
+
+    public sealed class EvaluationContext
+    {
+        public EvaluationContext(ITraceWriter trace, IDictionary<string, object> extensions)
+        {
+            ArgUtil.NotNull(trace, nameof(trace));
+            Trace = trace;
+            Extensions = extensions ?? new Dictionary<string, object>(0);
+        }
+
+        public ITraceWriter Trace { get; }
+
+        public IDictionary<string, object> Extensions { get; }
     }
 }

@@ -5,49 +5,29 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
 {
     internal sealed class Parser
     {
-        private readonly IDictionary<string, object> _extensionObjects;
-        private readonly LexicalAnalyzer _lexer;
-        private readonly string _raw; // Raw expression string.
-        private readonly ITraceWriter _trace;
-        private readonly Stack<ContainerInfo> _containers = new Stack<ContainerInfo>();
-        private Token _token;
-        private Token _lastToken;
-
-        public Parser(string expression, ITraceWriter trace, IDictionary<string, object> extensionObjects)
+        public Node CreateTree(string expression, ITraceWriter trace, IEnumerable<ExtensionInfo> extensions)
         {
-            ArgUtil.NotNull(trace, nameof(trace));
-            ArgUtil.NotNull(extensionObjects, nameof(extensionObjects));
-            _raw = expression;
-            _trace = trace;
-            _extensionObjects = extensionObjects;
-            _lexer = new LexicalAnalyzer(expression, trace, _extensionObjects);
-            CreateTree();
-        }
-
-        public Node Root { get; private set; }
-
-        private void CreateTree()
-        {
-            _trace.Verbose($"Entering {nameof(CreateTree)}");
-            while (TryGetNextToken())
+            var context = new ParseContext(expression, trace, extensions);
+            context.Trace.Verbose($"Entering {nameof(CreateTree)}");
+            while (TryGetNextToken(context))
             {
-                switch (_token.Kind)
+                switch (context.Token.Kind)
                 {
                     // Punctuation
                     case TokenKind.StartIndex:
-                        HandleStartIndex();
+                        HandleStartIndex(context);
                         break;
                     case TokenKind.EndIndex:
-                        HandleEndIndex();
+                        HandleEndIndex(context);
                         break;
                     case TokenKind.EndParameter:
-                        HandleEndParameter();
+                        HandleEndParameter(context);
                         break;
                     case TokenKind.Separator:
-                        HandleSeparator();
+                        HandleSeparator(context);
                         break;
                     case TokenKind.Dereference:
-                        HandleDereference();
+                        HandleDereference(context);
                         break;
 
                     // Functions
@@ -61,7 +41,8 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
                     case TokenKind.NotEqual:
                     case TokenKind.Or:
                     case TokenKind.Xor:
-                        HandleFunction();
+                    case TokenKind.Extension:
+                        HandleFunction(context);
                         break;
 
                     // Leaf values
@@ -69,57 +50,58 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
                     case TokenKind.Number:
                     case TokenKind.Version:
                     case TokenKind.String:
-                    case TokenKind.ExtensionObject:
-                        HandleValue();
+                        HandleValue(context);
                         break;
 
                     // Malformed
                     case TokenKind.Unrecognized:
-                        throw new ParseException(ParseExceptionKind.UnrecognizedValue, _token, _raw);
+                        throw new ParseException(ParseExceptionKind.UnrecognizedValue, context.Token, context.Raw);
 
                     // Unexpected
                     case TokenKind.PropertyName:    // PropertyName should never reach here.
                     case TokenKind.StartParameter:  // StartParameter is only expected by HandleFunction.
                     default:
-                        throw new ParseException(ParseExceptionKind.UnexpectedSymbol, _token, _raw);
+                        throw new ParseException(ParseExceptionKind.UnexpectedSymbol, context.Token, context.Raw);
                 }
             }
 
             // Validate all containers were closed.
-            if (_containers.Count > 0)
+            if (context.Containers.Count > 0)
             {
-                ContainerInfo container = _containers.Peek();
+                ContainerInfo container = context.Containers.Peek();
                 if (container.Node is FunctionNode)
                 {
-                    throw new ParseException(ParseExceptionKind.UnclosedFunction, container.Token, _raw);
+                    throw new ParseException(ParseExceptionKind.UnclosedFunction, container.Token, context.Raw);
                 }
                 else
                 {
-                    throw new ParseException(ParseExceptionKind.UnclosedIndexer, container.Token, _raw);
+                    throw new ParseException(ParseExceptionKind.UnclosedIndexer, container.Token, context.Raw);
                 }
             }
+
+            return context.Root;
         }
 
-        private bool TryGetNextToken()
+        private bool TryGetNextToken(ParseContext context)
         {
-            _lastToken = _token;
-            if (_lexer.TryGetNextToken(ref _token))
+            context.LastToken = context.Token;
+            if (context.Lexer.TryGetNextToken(ref context.Token))
             {
-                string indent = string.Empty.PadRight(_containers.Count * 2, '.');
-                switch (_token.Kind)
+                string indent = string.Empty.PadRight(context.Containers.Count * 2, '.');
+                switch (context.Token.Kind)
                 {
                     // Literal values
                     case TokenKind.Boolean:
                     case TokenKind.Number:
                     case TokenKind.Version:
                     case TokenKind.String:
-                        _trace.Verbose($"{indent}{_token.Kind} '{_token.ParsedValue}'");
+                        context.Trace.Verbose($"{indent}{context.Token.Kind} '{context.Token.ParsedValue}'");
                         break;
                     // Named or unrecognized
-                    case TokenKind.ExtensionObject:
+                    case TokenKind.Extension:
                     case TokenKind.PropertyName:
                     case TokenKind.Unrecognized:
-                        _trace.Verbose($"{indent}{_token.Kind} '{_raw.Substring(_token.Index, _token.Length)}'");
+                        context.Trace.Verbose($"{indent}{context.Token.Kind} '{context.Raw.Substring(context.Token.Index, context.Token.Length)}'");
                         break;
                     // Punctuation
                     case TokenKind.StartIndex:
@@ -128,11 +110,11 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
                     case TokenKind.EndParameter:
                     case TokenKind.Separator:
                     case TokenKind.Dereference:
-                        _trace.Verbose($"{indent}{_raw.Substring(_token.Index, 1)}");
+                        context.Trace.Verbose($"{indent}{context.Raw.Substring(context.Token.Index, 1)}");
                         break;
                     // Functions
                     default:
-                        _trace.Verbose($"{indent}{_token.Kind}");
+                        context.Trace.Verbose($"{indent}{context.Token.Kind}");
                         break;
                 }
 
@@ -142,255 +124,213 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
             return false;
         }
 
-        private void HandleStartIndex()
+        private void HandleStartIndex(ParseContext context)
         {
-            // Validate follows an extension dictionary object, a property name, or "]".
-            bool valid = false;
-            if (_lastToken != null)
+            // Validate follows ")", "]", or a property name.
+            if (context.LastToken == null ||
+                (context.LastToken.Kind != TokenKind.EndParameter && context.LastToken.Kind != TokenKind.EndIndex && context.LastToken.Kind != TokenKind.PropertyName))
             {
-                switch (_lastToken.Kind)
-                {
-                    case TokenKind.ExtensionObject:
-                        string extensionName = _raw.Substring(_lastToken.Index, _lastToken.Length);
-                        valid = _extensionObjects[extensionName] is IDictionary<string, object>;
-                        break;
-                    case TokenKind.PropertyName:
-                    case TokenKind.EndIndex:
-                        valid = true;
-                        break;
-                }
-            }
-
-            if (!valid)
-            {
-                throw new ParseException(ParseExceptionKind.UnexpectedSymbol, _token, _raw);
+                throw new ParseException(ParseExceptionKind.UnexpectedSymbol, context.Token, context.Raw);
             }
 
             // Wrap the object being indexed into.
-            var indexer = new IndexerNode(_trace);
+            var indexer = new IndexerNode();
             Node obj = null;
-            if (_containers.Count > 0)
+            if (context.Containers.Count > 0)
             {
-                ContainerNode container = _containers.Peek().Node;
+                ContainerNode container = context.Containers.Peek().Node;
                 int objIndex = container.Parameters.Count;
                 obj = container.Parameters[container.Parameters.Count - 1];
                 container.ReplaceParameter(objIndex, indexer);
             }
             else
             {
-                obj = Root;
-                Root = indexer;
+                obj = context.Root;
+                context.Root = indexer;
             }
 
             indexer.AddParameter(obj);
 
             // Update the container stack.
-            _containers.Push(new ContainerInfo() { Node = indexer, Token = _token });
+            context.Containers.Push(new ContainerInfo() { Node = indexer, Token = context.Token });
         }
 
-        private void HandleDereference()
+        private void HandleDereference(ParseContext context)
         {
-            // Validate follows an extension dictionary object, a property name, or "]".
-            bool valid = false;
-            if (_lastToken != null)
+            // Validate follows ")", "]", or a property name.
+            if (context.LastToken == null ||
+                (context.LastToken.Kind != TokenKind.EndParameter && context.LastToken.Kind != TokenKind.EndIndex && context.LastToken.Kind != TokenKind.PropertyName))
             {
-                switch (_lastToken.Kind)
-                {
-                    case TokenKind.ExtensionObject:
-                        string extensionName = _raw.Substring(_lastToken.Index, _lastToken.Length);
-                        valid = _extensionObjects[extensionName] is IDictionary<string, object>;
-                        break;
-                    case TokenKind.PropertyName:
-                    case TokenKind.EndIndex:
-                        valid = true;
-                        break;
-                }
-            }
-
-            if (!valid)
-            {
-                throw new ParseException(ParseExceptionKind.UnexpectedSymbol, _token, _raw);
+                throw new ParseException(ParseExceptionKind.UnexpectedSymbol, context.Token, context.Raw);
             }
 
             // Wrap the object being indexed into.
-            var indexer = new IndexerNode(_trace);
+            var indexer = new IndexerNode();
             Node obj = null;
-            if (_containers.Count > 0)
+            if (context.Containers.Count > 0)
             {
-                ContainerNode container = _containers.Peek().Node;
+                ContainerNode container = context.Containers.Peek().Node;
                 int objIndex = container.Parameters.Count;
                 obj = container.Parameters[container.Parameters.Count - 1];
                 container.ReplaceParameter(objIndex, indexer);
             }
             else
             {
-                obj = Root;
-                Root = indexer;
+                obj = context.Root;
+                context.Root = indexer;
             }
 
             indexer.AddParameter(obj);
 
             // Validate a property name follows.
-            if (!TryGetNextToken())
+            if (!TryGetNextToken(context))
             {
-                throw new ParseException(ParseExceptionKind.ExpectedPropertyName, _lastToken, _raw);
+                throw new ParseException(ParseExceptionKind.ExpectedPropertyName, context.LastToken, context.Raw);
             }
 
-            if (_token.Kind != TokenKind.PropertyName)
+            if (context.Token.Kind != TokenKind.PropertyName)
             {
-                throw new ParseException(ParseExceptionKind.UnexpectedSymbol, _token, _raw);
+                throw new ParseException(ParseExceptionKind.UnexpectedSymbol, context.Token, context.Raw);
             }
 
             // Add the property name to the indexer, as a string.
-            string propertyName = _raw.Substring(_token.Index, _token.Length);
-            indexer.AddParameter(new LeafNode(val: propertyName, extensionName: string.Empty, trace: _trace));
+            string propertyName = context.Raw.Substring(context.Token.Index, context.Token.Length);
+            indexer.AddParameter(new LeafNode(propertyName));
         }
 
-        private void HandleEndParameter()
+        private void HandleEndParameter(ParseContext context)
         {
-            ContainerInfo container = _containers.Count > 0 ? _containers.Peek() : null;    // Validate:
+            ContainerInfo container = context.Containers.Count > 0 ? context.Containers.Peek() : null;  // Validate:
             if (container == null ||                                                        // 1) Container is not null
                 !(container.Node is FunctionNode) ||                                        // 2) Container is a function
                 container.Node.Parameters.Count < GetMinParamCount(container.Token.Kind) || // 3) Not below min param threshold
-                _lastToken.Kind == TokenKind.Separator)                                     // 4) Last token is not a separator
+                context.LastToken.Kind == TokenKind.Separator)                              // 4) Last token is not a separator
             {
-                throw new ParseException(ParseExceptionKind.UnexpectedSymbol, _token, _raw);
+                throw new ParseException(ParseExceptionKind.UnexpectedSymbol, context.Token, context.Raw);
             }
 
-            _containers.Pop();
+            context.Containers.Pop();
         }
 
-        private void HandleEndIndex()
+        private void HandleEndIndex(ParseContext context)
         {
-            IndexerNode indexer = _containers.Count > 0 ? _containers.Peek().Node as IndexerNode : null;
+            IndexerNode indexer = context.Containers.Count > 0 ? context.Containers.Peek().Node as IndexerNode : null;
             //                                  // Validate:
             if (indexer == null ||              // 1) Container is an indexer
                 indexer.Parameters.Count != 2)  // 2) Exactly 2 parameters
             {
-                throw new ParseException(ParseExceptionKind.UnexpectedSymbol, _token, _raw);
+                throw new ParseException(ParseExceptionKind.UnexpectedSymbol, context.Token, context.Raw);
             }
 
-            _containers.Pop();
+            context.Containers.Pop();
         }
 
-        private void HandleValue()
+        private void HandleValue(ParseContext context)
         {
             // Validate either A) is the first token OR B) follows "[" "(" or ",".
-            if (_lastToken != null &&
-                _lastToken.Kind != TokenKind.StartIndex &&
-                _lastToken.Kind != TokenKind.StartParameter &&
-                _lastToken.Kind != TokenKind.Separator)
+            if (context.LastToken != null &&
+                context.LastToken.Kind != TokenKind.StartIndex &&
+                context.LastToken.Kind != TokenKind.StartParameter &&
+                context.LastToken.Kind != TokenKind.Separator)
             {
-                throw new ParseException(ParseExceptionKind.UnexpectedSymbol, _token, _raw);
+                throw new ParseException(ParseExceptionKind.UnexpectedSymbol, context.Token, context.Raw);
             }
-
-            // Create the node.
-            object val;
-            string extensionName;
-            if (_token.Kind == TokenKind.ExtensionObject)
-            {
-                extensionName = _raw.Substring(_token.Index, _token.Length);
-                val = _extensionObjects[extensionName];
-            }
-            else
-            {
-                extensionName = string.Empty;
-                val = _token.ParsedValue;
-            }
-
-            var node = new LeafNode(val: val, extensionName: extensionName, trace: _trace);
 
             // Update the tree.
-            if (Root == null)
+            var node = new LeafNode(context.Token.ParsedValue);
+            if (context.Root == null)
             {
-                Root = node;
+                context.Root = node;
             }
             else
             {
-                _containers.Peek().Node.AddParameter(node);
+                context.Containers.Peek().Node.AddParameter(node);
             }
         }
 
-        private void HandleSeparator()
+        private void HandleSeparator(ParseContext context)
         {
-            ContainerInfo container = _containers.Count > 0 ? _containers.Peek() : null;        // Validate:
+            ContainerInfo container = context.Containers.Count > 0 ? context.Containers.Peek() : null;  // Validate:
             if (container == null ||                                                            // 1) Container is not null
                 !(container.Node is FunctionNode) ||                                            // 2) Container is a function
                 container.Node.Parameters.Count < 1 ||                                          // 3) At least one parameter
                 container.Node.Parameters.Count >= GetMaxParamCount(container.Token.Kind) ||    // 4) Under max parameters threshold
-                _lastToken.Kind == TokenKind.Separator)                                         // 5) Last token is not a separator
+                context.LastToken.Kind == TokenKind.Separator)                                  // 5) Last token is not a separator
             {
-                throw new ParseException(ParseExceptionKind.UnexpectedSymbol, _token, _raw);
+                throw new ParseException(ParseExceptionKind.UnexpectedSymbol, context.Token, context.Raw);
             }
         }
 
-        private void HandleFunction()
+        private void HandleFunction(ParseContext context)
         {
             // Validate either A) is first token OR B) follows "," or "[" or "(".
-            if (_lastToken != null &&
-                (_lastToken.Kind != TokenKind.Separator &&
-                _lastToken.Kind != TokenKind.StartIndex &&
-                _lastToken.Kind != TokenKind.StartParameter))
+            if (context.LastToken != null &&
+                (context.LastToken.Kind != TokenKind.Separator &&
+                context.LastToken.Kind != TokenKind.StartIndex &&
+                context.LastToken.Kind != TokenKind.StartParameter))
             {
-                throw new ParseException(ParseExceptionKind.UnexpectedSymbol, _token, _raw);
+                throw new ParseException(ParseExceptionKind.UnexpectedSymbol, context.Token, context.Raw);
             }
 
             // Create the node.
             FunctionNode node;
-            switch (_token.Kind)
+            switch (context.Token.Kind)
             {
                 case TokenKind.And:
-                    node = new AndNode(_trace);
+                    node = new AndNode();
                     break;
                 case TokenKind.Equal:
-                    node = new EqualNode(_trace);
+                    node = new EqualNode();
                     break;
                 case TokenKind.GreaterThan:
-                    node = new GreaterThanNode(_trace);
+                    node = new GreaterThanNode();
                     break;
                 case TokenKind.GreaterThanOrEqual:
-                    node = new GreaterThanOrEqualNode(_trace);
+                    node = new GreaterThanOrEqualNode();
                     break;
                 case TokenKind.LessThan:
-                    node = new LessThanNode(_trace);
+                    node = new LessThanNode();
                     break;
                 case TokenKind.LessThanOrEqual:
-                    node = new LessThanOrEqualNode(_trace);
+                    node = new LessThanOrEqualNode();
                     break;
                 case TokenKind.Not:
-                    node = new NotNode(_trace);
+                    node = new NotNode();
                     break;
                 case TokenKind.NotEqual:
-                    node = new NotEqualNode(_trace);
+                    node = new NotEqualNode();
                     break;
                 case TokenKind.Or:
-                    node = new OrNode(_trace);
+                    node = new OrNode();
                     break;
                 case TokenKind.Xor:
-                    node = new XorNode(_trace);
+                    node = new XorNode();
+                    break;
+                case TokenKind.Extension:
+                    node = new ExtensionNode(context.Raw.Substring(context.Token.Index, context.Token.Length));
                     break;
                 default:
                     // Should never reach here.
-                    throw new NotSupportedException($"Unexpected function token name: '{_token.Kind}'");
+                    throw new NotSupportedException($"Unexpected function token name: '{context.Token.Kind}'");
             }
 
             // Update the tree.
-            if (Root == null)
+            if (context.Root == null)
             {
-                Root = node;
+                context.Root = node;
             }
             else
             {
-                _containers.Peek().Node.AddParameter(node);
+                context.Containers.Peek().Node.AddParameter(node);
             }
 
             // Update the container stack.
-            _containers.Push(new ContainerInfo() { Node = node, Token = _token });
+            context.Containers.Push(new ContainerInfo() { Node = node, Token = context.Token });
 
             // Validate '(' follows.
-            if (!TryGetNextToken() || _token.Kind != TokenKind.StartParameter)
+            if (!TryGetNextToken(context) || context.Token.Kind != TokenKind.StartParameter)
             {
-                throw new ParseException(ParseExceptionKind.ExpectedStartParameter, _lastToken, _raw);
+                throw new ParseException(ParseExceptionKind.ExpectedStartParameter, context.LastToken, context.Raw);
             }
         }
 
@@ -443,6 +383,47 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
 
             public Token Token { get; set; }
         }
+ 
+        private sealed class ParseContext
+        {
+            public readonly Stack<ContainerInfo> Containers = new Stack<ContainerInfo>();
+            public readonly Dictionary<string, ExtensionInfo> Extensions = new Dictionary<string, ExtensionInfo>(StringComparer.OrdinalIgnoreCase);
+            public readonly LexicalAnalyzer Lexer;
+            public readonly string Raw;
+            public readonly ITraceWriter Trace;
+            public Token Token;
+            public Token LastToken;
+            public Node Root;
+
+            public ParseContext(string expression, ITraceWriter trace, IEnumerable<ExtensionInfo> extensions)
+            {
+                ArgUtil.NotNull(trace, nameof(trace));
+                Raw = expression ?? string.Empty;
+                Trace = trace;
+                foreach (ExtensionInfo extension in (extensions ?? new ExtensionInfo[0]))
+                {
+                    Extensions.Add(extension.Name, extension);
+                }
+
+                Lexer = new LexicalAnalyzer(Raw, trace, Extensions.Keys);
+            }
+        }
+    }
+
+    public class ExtensionInfo
+    {
+        public ExtensionInfo(string name, int minParameters, int maxParameters)
+        {
+            Name = name;
+            MinParameters = minParameters;
+            MaxParameters = maxParameters;
+        }
+
+        public string Name { get; }
+
+        public int MinParameters { get; }
+
+        public int MaxParameters { get; }
     }
 
     // todo: make internal

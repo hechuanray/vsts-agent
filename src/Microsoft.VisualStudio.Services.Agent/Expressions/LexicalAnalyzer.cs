@@ -11,17 +11,16 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
         private static readonly Regex s_keywordRegex = new Regex("^[a-zA-Z_][a-zA-Z0-9_]*$", RegexOptions.None);
         private readonly string _raw; // Raw expression string.
         private readonly ITraceWriter _trace;
-        private readonly IDictionary<string, object> _extensionObjects;
+        private readonly HashSet<string> _extensionNames;
         private int _index; // Index of raw condition string.
         private Token _lastToken;
 
-        public LexicalAnalyzer(string expression, ITraceWriter trace, IDictionary<string, object> extensionObjects)
+        public LexicalAnalyzer(string expression, ITraceWriter trace, IEnumerable<string> extensionNames)
         {
             ArgUtil.NotNull(trace, nameof(trace));
-            ArgUtil.NotNull(extensionObjects, nameof(extensionObjects));
             _raw = expression;
             _trace = trace;
-            _extensionObjects = extensionObjects;
+            _extensionNames = new HashSet<string>(extensionNames ?? new string[0], StringComparer.OrdinalIgnoreCase);
         }
 
         public bool TryGetNextToken(ref Token token)
@@ -205,12 +204,10 @@ namespace Microsoft.VisualStudio.Services.Agent.Expressions
                 {
                     return new Token(TokenKind.Xor, startIndex, length);
                 }
-
-                // Extension object
-                object obj;
-                if (_extensionObjects.TryGetValue(str, out obj))
+                // Extension
+                else if (_extensionNames.Contains(str))
                 {
-                    return new Token(TokenKind.ExtensionObject, startIndex, length);
+                    return new Token(TokenKind.Extension, startIndex, length);
                 }
             }
 

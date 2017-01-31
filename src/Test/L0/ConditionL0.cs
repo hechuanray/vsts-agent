@@ -161,6 +161,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Tests
                 Assert.Equal(true, EvaluateCondition(hc, "eq(123456.789, ' +123,456.7890 ')")); // string
                 Assert.Equal(true, EvaluateCondition(hc, "eq(-123456.789, ' -123,456.7890 ')"));
                 Assert.Equal(true, EvaluateCondition(hc, "eq(123000, ' 123,000.000 ')"));
+                Assert.Equal(true, EvaluateCondition(hc, "eq(0, '')"));
                 Assert.Equal(false, EvaluateCondition(hc, "eq(1, 'not a number')"));
                 Assert.Equal(false, EvaluateCondition(hc, "eq(0, 'not a number')"));
                 Assert.Equal(false, EvaluateCondition(hc, "eq(1.2, 1.2.0.0)")); // version
@@ -265,6 +266,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Tests
                 Assert.Equal(false, EvaluateCondition(hc, "ne(123456.789, ' +123,456.7890 ')")); // string
                 Assert.Equal(false, EvaluateCondition(hc, "ne(-123456.789, ' -123,456.7890 ')"));
                 Assert.Equal(false, EvaluateCondition(hc, "ne(123000, ' 123,000.000 ')"));
+                Assert.Equal(false, EvaluateCondition(hc, "ne(0, '')"));
                 Assert.Equal(true, EvaluateCondition(hc, "ne(1, 'not a number')"));
                 Assert.Equal(true, EvaluateCondition(hc, "ne(0, 'not a number')"));
                 Assert.Equal(true, EvaluateCondition(hc, "ne(1.2, 1.2.0.0)")); // version

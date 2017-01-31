@@ -36,9 +36,7 @@
         Number,
         Version,
         String,
-        ExtensionObject,
         PropertyName,
-
 
         // Functions
         And,
@@ -51,6 +49,7 @@
         NotEqual,
         Or,
         Xor,
+        Extension,
 
         Unrecognized,
     }
