@@ -103,13 +103,21 @@ function rundotnet ()
     runtime_args=""
     if [[ ("$dotnet_cmd" == "build") ]]; then
         cfg_args="-c ${BUILD_CONFIG}"
-        msbuild_args="//p:OSConstant=${define_os}"
+        if [[ "$define_os" == 'OS_WINDOWS' ]]; then
+            msbuild_args="//p:OSConstant=${define_os}"
+        else
+            msbuild_args="/p:OSConstant=${define_os}"
+        fi    
     fi
 
     if [[ ("$dotnet_cmd" == "publish") ]]; then
         cfg_args="-c ${BUILD_CONFIG}"
-        msbuild_args="//p:OSConstant=${define_os}"
         runtime_args="--runtime ${runtime_id}"        
+        if [[ "$define_os" == 'OS_WINDOWS' ]]; then
+            msbuild_args="//p:OSConstant=${define_os}"
+        else
+            msbuild_args="/p:OSConstant=${define_os}"
+        fi    
     fi
 
     echo "${cfg_args}"
