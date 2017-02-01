@@ -135,34 +135,11 @@ function rundotnet ()
 
 function generateConstant()
 {
-    # we are trying to get the runtime constant provide by dotnet cli
-    # the only way to get the constant is run dotnet publish on a project, and the constant is in the output folder path
-    # so we need dotnet publish 'Microsoft.VisualStudio.Services.Agent' to get the runtime constant
-    # however, the 'Microsoft.VisualStudio.Services.Agent' is take dependency on those generate constants
-    # we need copy the generate file template, so we won't get complie error
-    # after we get generate constants, we will overwrite the generated file
-    cat "Misc/BuildConstants.ch" > "Microsoft.VisualStudio.Services.Agent/BuildConstants.cs"
-    rundotnet publish failed build_dirs[0]
-    
-    # get the runtime we are build for
-    # if exist Agent.Listener/bin/${BUILD_CONFIG}/netcoreapp1.1
-    build_folder="Microsoft.VisualStudio.Services.Agent/bin/${BUILD_CONFIG}/netcoreapp1.1"
-    if [ ! -d "${build_folder}" ]; then
-        echo "You must build first.  Expecting to find ${build_folder}"
-    fi
-
-    pushd "${build_folder}" > /dev/null
-    pwd
-    runtime_folder=`ls -d */`
-    popd > /dev/null
-
     commit_token="_COMMIT_HASH_"
     package_token="_PACKAGE_NAME_"
     commit_hash=`git rev-parse HEAD` || failed "git commit hash"
-    package_name=${runtime_folder%/}
-    echo "Building ${commit_hash} --- ${package_name}"
-
-    sed -e "s/$commit_token/$commit_hash/g" -e "s/$package_token/$package_name/g" "Misc/BuildConstants.ch" > "Microsoft.VisualStudio.Services.Agent/BuildConstants.cs"
+    echo "Building ${commit_hash} --- ${runtime_id}"
+    sed -e "s/$commit_token/$commit_hash/g" -e "s/$package_token/$runtime_id/g" "Misc/BuildConstants.ch" > "Microsoft.VisualStudio.Services.Agent/BuildConstants.cs"
 }
 
 function build ()
