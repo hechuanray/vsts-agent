@@ -19,13 +19,21 @@ namespace Microsoft.VisualStudio.Services.Agent.Tests
         {
             using (var hc = new TestHostContext(this))
             {
+                Tracing trace = hc.GetTrace(nameof(CastsToBoolean));
+
                 // Boolean
+                trace.Info($"****************************************");
+                trace.Info($"From Boolean");
+                trace.Info($"****************************************");
                 Assert.Equal(true, EvaluateAsBoolean(hc, "true"));
                 Assert.Equal(true, EvaluateAsBoolean(hc, "TRUE"));
                 Assert.Equal(false, EvaluateAsBoolean(hc, "false"));
                 Assert.Equal(false, EvaluateAsBoolean(hc, "FALSE"));
 
                 // Number
+                trace.Info($"****************************************");
+                trace.Info($"From Number");
+                trace.Info($"****************************************");
                 Assert.Equal(true, EvaluateAsBoolean(hc, "1"));
                 Assert.Equal(true, EvaluateAsBoolean(hc, ".5"));
                 Assert.Equal(true, EvaluateAsBoolean(hc, "0.5"));
@@ -40,6 +48,9 @@ namespace Microsoft.VisualStudio.Services.Agent.Tests
                 Assert.Equal(false, EvaluateAsBoolean(hc, "-0.0"));
 
                 // String
+                trace.Info($"****************************************");
+                trace.Info($"From String");
+                trace.Info($"****************************************");
                 Assert.Equal(true, EvaluateAsBoolean(hc, "'a'"));
                 Assert.Equal(true, EvaluateAsBoolean(hc, "'false'"));
                 Assert.Equal(true, EvaluateAsBoolean(hc, "'0'"));
@@ -47,12 +58,18 @@ namespace Microsoft.VisualStudio.Services.Agent.Tests
                 Assert.Equal(false, EvaluateAsBoolean(hc, "''"));
 
                 // Version
+                trace.Info($"****************************************");
+                trace.Info($"From Version");
+                trace.Info($"****************************************");
                 Assert.Equal(true, EvaluateAsBoolean(hc, "1.2.3"));
                 Assert.Equal(true, EvaluateAsBoolean(hc, "1.2.3.4"));
                 Assert.Equal(true, EvaluateAsBoolean(hc, "0.0.0"));
                 Assert.Equal(true, EvaluateAsBoolean(hc, "0.0.0"));
 
                 // Objects/Arrays
+                trace.Info($"****************************************");
+                trace.Info($"From Objects/Arrays");
+                trace.Info($"****************************************");
                 Assert.Equal(true, EvaluateAsBoolean(hc, "testData()", new IExtensionInfo[] { new ExtensionInfo<TestDataNode>("TestData", 0, 0) }, new object()));
                 Assert.Equal(true, EvaluateAsBoolean(hc, "testData()", new IExtensionInfo[] { new ExtensionInfo<TestDataNode>("TestData", 0, 0) }, new object[0]));
                 Assert.Equal(true, EvaluateAsBoolean(hc, "testData()", new IExtensionInfo[] { new ExtensionInfo<TestDataNode>("TestData", 0, 0) }, new int[0]));
@@ -61,6 +78,9 @@ namespace Microsoft.VisualStudio.Services.Agent.Tests
                 Assert.Equal(true, EvaluateAsBoolean(hc, "testData()", new IExtensionInfo[] { new ExtensionInfo<TestDataNode>("TestData", 0, 0) }, new JObject()));
 
                 // Null
+                trace.Info($"****************************************");
+                trace.Info($"From Null");
+                trace.Info($"****************************************");
                 Assert.Equal(true, EvaluateAsBoolean(hc, "testData()", new IExtensionInfo[] { new ExtensionInfo<TestDataNode>("TestData", 0, 0) }, null));
             }
         }

@@ -24,36 +24,34 @@ namespace Microsoft.VisualStudio.Services.DistributedTask.Expressions
 
         public bool GetValueAsBoolean(EvaluationContext context)
         {
-            object val = GetValue(context);
             bool result;
-            if (val is bool)
+            ValueKind kind;
+            object val = GetCanonicalValue(context, out kind);
+            switch (kind)
             {
-                result = (bool)val;
-            }
-            else if (val is decimal)
-            {
-                result = (decimal)val != 0m; // 0 converts to false, otherwise true.
-                TraceValue(context, result);
-            }
-            else if (val is Version)
-            {
-                result = true;
-                TraceValue(context, result);
-            }
-            else if (val is string)
-            {
-                result = !string.IsNullOrEmpty(val as string);
-                TraceValue(context, result);
-            }
-            else if (object.ReferenceEquals(val, null))
-            {
-                result = false;
-                TraceValue(context, result);
-            }
-            else
-            {
-                result = true;
-                TraceValue(context, result);
+                case ValueKind.Boolean:
+                    result = (bool)val;
+                    break;
+                case ValueKind.Number:
+                    result = (decimal)val != 0m; // 0 converts to false, otherwise true.
+                    TraceValue(context, result);
+                    break;
+                case ValueKind.String:
+                    result = !string.IsNullOrEmpty(val as string);
+                    TraceValue(context, result);
+                    break;
+                case ValueKind.Array:
+                case ValueKind.Object:
+                case ValueKind.Version:
+                    result = true;
+                    TraceValue(context, result);
+                    break;
+                case ValueKind.Null:
+                    result = true;
+                    TraceValue(context, result);
+                    break;
+                default:
+                    throw new NotSupportedException($"Unable to convert value to Boolean. Unexpected value kind '{kind}'.");
             }
 
             return result;
@@ -61,75 +59,83 @@ namespace Microsoft.VisualStudio.Services.DistributedTask.Expressions
 
         public decimal GetValueAsNumber(EvaluationContext context)
         {
-            object val = GetValue(context);
-            if (val is decimal)
+            ValueKind kind;
+            object val = GetCanonicalValue(context, out kind);
+            if (kind == ValueKind.Number)
             {
                 return (decimal)val;
             }
 
             decimal d;
-            if (TryConvertToNumber(val, out d))
+            if (TryConvertToNumber(val, kind, out d))
             {
                 TraceValue(context, d);
                 return d;
             }
-            else if (val is Version)
-            {
-                throw new ConvertException(val, ValueKind.Number);
-            }
-            else if (val is string && !string.IsNullOrEmpty(val as string))
-            {
-                Exception inner = null;
-                try
-                {
-                    decimal.Parse(
-                        val as string ?? string.Empty,
-                        NumberStyles,
-                        CultureInfo.InvariantCulture);
-                }
-                catch (Exception ex)
-                {
-                    inner = ex;
-                }
 
-                throw new ConvertException(val, ValueKind.Number, inner);
-            }
+            throw new ConvertException(val, from: kind, to: ValueKind.Number);
+            // else if (val is Version)
+            // {
+            //     throw new ConvertException(val, ValueKind.Number);
+            // }
+            // else if (val is string && !string.IsNullOrEmpty(val as string))
+            // {
+            //     Exception inner = null;
+            //     try
+            //     {
+            //         decimal.Parse(
+            //             val as string ?? string.Empty,
+            //             NumberStyles,
+            //             CultureInfo.InvariantCulture);
+            //     }
+            //     catch (Exception ex)
+            //     {
+            //         inner = ex;
+            //     }
 
-            return 0;
+            //     throw new ConvertException(val, ValueKind.Number, inner);
+            // }
+
+            // return 0;
         }
 
         public string GetValueAsString(EvaluationContext context)
         {
             string result;
-            object val = GetValue(context);
-            if (object.ReferenceEquals(val, null) || val is string)
+            ValueKind kind;
+            object val = GetCanonicalValue(context, out kind);
+            switch (kind)
             {
-                result = val as string;
-            }
-            else if (val is bool)
-            {
-                result = string.Format(CultureInfo.InvariantCulture, "{0}", val);
-                TraceValue(context, result);
-            }
-            else if (val is decimal)
-            {
-                decimal d = (decimal)val;
-                result = d.ToString("G", CultureInfo.InvariantCulture);
-                if (result.Contains("."))
-                {
-                    result = result.TrimEnd('0').TrimEnd('.'); // Omit trailing zeros after the decimal point.
-                }
+                case ValueKind.Boolean:
+                    result = string.Format(CultureInfo.InvariantCulture, "{0}", val);
+                    TraceValue(context, result);
+                    return result;
+                case ValueKind.Number:
+                    result = ((decimal)val).ToString("G", CultureInfo.InvariantCulture);
+                    if (result.Contains("."))
+                    {
+                        result = result.TrimEnd('0').TrimEnd('.'); // Omit trailing zeros after the decimal point.
+                    }
 
-                TraceValue(context, result);
+                    TraceValue(context, result);
+                    return result;
+                case ValueKind.String:
+                    result = val as string;
+                    return result;
+                case ValueKind.Version:
+                    Version v = val as Version;
+                    result = v.ToString();
+                    TraceValue(context, result);
+                    return result;
+                case ValueKind.Array:
+                case ValueKind.Object:
+                case ValueKind.Null:
+                    result = string.Empty;
+                    TraceValue(context, result);
+                    return result;
+                default:
+                    throw new NotSupportedException($"Unable to convert to String. Unexpected value kind '{kind}'.");
             }
-            else
-            {
-                Version v = val as Version;
-                result = v.ToString();
-                TraceValue(context, result);
-            }
-
-            return result;
         }
 
         public Version GetValueAsVersion(EvaluationContext context)
@@ -309,57 +315,67 @@ namespace Microsoft.VisualStudio.Services.DistributedTask.Expressions
             TraceVerbose(context, String.Format(CultureInfo.InvariantCulture, "{0}{1} ({2})", prefix, val, kind));
         }
 
-        private bool TryConvertToNumber(object val, out decimal result)
+        private bool TryConvertToNumber(object val, ValueKind kind, out decimal result)
         {
-            if (val is bool)
+            switch (kind)
             {
-                result = (bool)val ? 1m : 0m;
-                return true;
-            }
-            else if (val is decimal)
-            {
-                result = (decimal)val;
-                return true;
-            }
-            else if (val is Version)
-            {
-                result = default(decimal);
-                return false;
-            }
+                case ValueKind.Boolean:
+                    result = (bool)val ? 1m : 0m;
+                    return true;
+                case ValueKind.Number:
+                    result = (decimal)val;
+                    return true;
+                case ValueKind.Version:
+                    result = default(decimal);
+                    return false;
+                case ValueKind.String:
+                    string s = val as string ?? string.Empty;
+                    if (string.IsNullOrEmpty(s))
+                    {
+                        result = 0m;
+                        return true;
+                    }
 
-            string s = val as string ?? string.Empty;
-            if (string.IsNullOrEmpty(s))
-            {
-                result = 0m;
-                return true;
+                    return decimal.TryParse(
+                        s,
+                        NumberStyles,
+                        CultureInfo.InvariantCulture,
+                        out result);
+                case ValueKind.Array:
+                case ValueKind.Object:
+                    result = default(decimal);
+                    return false;
+                case ValueKind.Null:
+                    result = 0m;
+                    return true;
+                default:
+                    throw new NotSupportedException($"Unable to determine whether value can be converted to Number. Unexpected value kind '{kind}'.");
             }
-
-            return decimal.TryParse(
-                s,
-                NumberStyles,
-                CultureInfo.InvariantCulture,
-                out result);
         }
 
-        private bool TryConvertToVersion(object val, out Version result)
+        private bool TryConvertToVersion(object val, ValueKind kind, out Version result)
         {
-            if (val is bool)
+            switch (kind)
             {
-                result = null;
-                return false;
+                case ValueKind.Boolean:
+                    result = null;
+                    return false;
+                case ValueKind.Number:
+                    return Version.TryParse(string.Format(CultureInfo.InvariantCulture, "{0}", val), out result);
+                case ValueKind.Version:
+                    result = val as Version;
+                    return true;
+                case ValueKind.String:
+                    string s = val as string ?? string.Empty;
+                    return Version.TryParse(s, out result);
+                case ValueKind.Array:
+                case ValueKind.Object:
+                case ValueKind.Null:
+                    result = null;
+                    return false;
+                default:
+                    throw new NotSupportedException($"Unable to convert to Version. Unexpected value kind '{kind}'.");
             }
-            else if (val is decimal)
-            {
-                return Version.TryParse(String.Format(CultureInfo.InvariantCulture, "{0}", val), out result);
-            }
-            else if (val is Version)
-            {
-                result = val as Version;
-                return true;
-            }
-
-            string s = val as string ?? string.Empty;
-            return Version.TryParse(s, out result);
         }
     }
 
@@ -918,7 +934,7 @@ namespace Microsoft.VisualStudio.Services.DistributedTask.Expressions
         }
     }
 
-    internal enum ValueKind
+    public enum ValueKind
     {
         Array,
         Boolean,
