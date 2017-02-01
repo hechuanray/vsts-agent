@@ -155,6 +155,25 @@ namespace Microsoft.VisualStudio.Services.DistributedTask.Expressions
             return false;
         }
 
+        public bool TryGetValueAsString(EvaluationContext context, out string result)
+        {
+            ValueKind kind;
+            object val = GetCanonicalValue(context, out kind);
+            if (kind == ValueKind.String)
+            {
+                result = val as string;
+                return true;
+            }
+            else if (TryConvertToString(val, kind, out result))
+            {
+                TraceValue(context, result);
+                return true;
+            }
+
+            TraceCoercionFailed(context, fromKind: kind, toKind: ValueKind.String);
+            return false;
+        }
+
         public bool TryGetValueAsVersion(EvaluationContext context, out Version result)
         {
             ValueKind kind;
@@ -312,6 +331,40 @@ namespace Microsoft.VisualStudio.Services.DistributedTask.Expressions
             }
         }
 
+        private static bool TryConvertToString(object val, ValueKind kind, out string result)
+        {
+            switch (kind)
+            {
+                case ValueKind.Boolean:
+                    result = string.Format(CultureInfo.InvariantCulture, "{0}", val);
+                    return true;
+                case ValueKind.Number:
+                    result = ((decimal)val).ToString("G", CultureInfo.InvariantCulture);
+                    if (result.Contains("."))
+                    {
+                        result = result.TrimEnd('0').TrimEnd('.'); // Omit trailing zeros after the decimal point.
+                    }
+
+                    return true;
+                case ValueKind.String:
+                    result = val as string;
+                    return true;
+                case ValueKind.Version:
+                    Version v = val as Version;
+                    result = v.ToString();
+                    return true;
+                case ValueKind.Null:
+                    result = string.Empty;
+                    return true;
+                case ValueKind.Array:
+                case ValueKind.Object:
+                    result = null;
+                    return false;
+                default:
+                    throw new NotSupportedException($"Unable to convert to String. Unexpected value kind '{kind}'.");
+            }
+        }
+
         private static bool TryConvertToVersion(object val, ValueKind kind, out Version result)
         {
             switch (kind)
@@ -411,28 +464,16 @@ namespace Microsoft.VisualStudio.Services.DistributedTask.Expressions
             else if (itemKind == ValueKind.Object && item is JObject)
             {
                 var jobject = item as JObject;
-                string key = Parameters[1].GetValueAsString(context);
-                result = jobject[key];
+                string key;
+                if (Parameters[1].TryGetValueAsString(context, out key))
+                {
+                    result = jobject[key];
+                }
             }
 
             TraceValue(context, result);
             return result;
         }
-
-        // protected object GetItemProperty(object item, string property)
-        // {
-        //     if (item is IDictionary<string, object>)
-        //     {
-        //         var dictionary = item as IDictionary<string, object>;
-        //         object result;
-        //         if (dictionary.TryGetValue(property ?? string.Empty, out result))
-        //         {
-        //             return result;
-        //         }
-        //     }
-
-        //     return null;
-        // }
     }
 
     public abstract class FunctionNode : ContainerNode
@@ -504,44 +545,60 @@ namespace Microsoft.VisualStudio.Services.DistributedTask.Expressions
         protected sealed override object GetValue(EvaluationContext context)
         {
             TraceName(context);
-            bool result;
-            object left = Parameters[0].GetValue(context);
-            if (left is bool)
+            bool result = false;
+            ValueKind leftKind;
+            object left = Parameters[0].GetCanonicalValue(context, out leftKind);
+            if (leftKind == ValueKind.Boolean)
             {
                 bool right = Parameters[1].GetValueAsBoolean(context);
                 result = (bool)left == right;
             }
-            else if (left is decimal)
+            else if (leftKind == ValueKind.Number)
             {
                 decimal right;
                 if (Parameters[1].TryGetValueAsNumber(context, out right))
                 {
                     result = (decimal)left == right;
                 }
-                else
-                {
-                    result = false;
-                }
             }
-            else if (left is Version)
+            else if (leftKind == ValueKind.Version)
             {
                 Version right;
                 if (Parameters[1].TryGetValueAsVersion(context, out right))
                 {
                     result = (Version)left == right;
                 }
-                else
+            }
+            else if (leftKind == ValueKind.String)
+            {
+                string right;
+                if (Parameters[1].TryGetValueAsString(context, out right))
                 {
-                    result = false;
+                    result = string.Equals(
+                        left as string ?? string.Empty,
+                        right ?? string.Empty,
+                        StringComparison.OrdinalIgnoreCase);
                 }
             }
-            else
+            else if (leftKind == ValueKind.Array || leftKind == ValueKind.Object)
             {
-                string right = Parameters[1].GetValueAsString(context);
-                result = string.Equals(
-                    left as string ?? string.Empty,
-                    right ?? string.Empty,
-                    StringComparison.OrdinalIgnoreCase);
+                ValueKind rightKind;
+                object right = Parameters[1].GetCanonicalValue(context, out rightKind);
+                result = leftKind == rightKind && object.ReferenceEquals(left, right);
+            }
+            else if (leftKind == ValueKind.Null)
+            {
+                ValueKind rightKind;
+                object right = Parameters[1].GetCanonicalValue(context, out rightKind);
+                switch (rightKind)
+                {
+                    case ValueKind.Null:
+                        result = true;
+                        break;
+                    case ValueKind.String:
+                        result = string.IsNullOrEmpty(right as string);
+                        break;
+                }
             }
 
             TraceValue(context, result);
@@ -549,6 +606,9 @@ namespace Microsoft.VisualStudio.Services.DistributedTask.Expressions
         }
     }
 
+    // ****************************************
+    // TODO: FIX THIS
+    // ****************************************
     internal sealed class GreaterThanNode : FunctionNode
     {
         protected sealed override string Name => "greaterThan";
@@ -584,6 +644,9 @@ namespace Microsoft.VisualStudio.Services.DistributedTask.Expressions
         }
     }
 
+    // ****************************************
+    // TODO: FIX THIS
+    // ****************************************
     internal sealed class GreaterThanOrEqualNode : FunctionNode
     {
         protected sealed override string Name => "greaterThanOrEqual";
@@ -619,6 +682,9 @@ namespace Microsoft.VisualStudio.Services.DistributedTask.Expressions
         }
     }
 
+    // ****************************************
+    // TODO: FIX THIS
+    // ****************************************
     internal sealed class InNode : FunctionNode
     {
         protected sealed override string Name => "in";
@@ -679,6 +745,9 @@ namespace Microsoft.VisualStudio.Services.DistributedTask.Expressions
         }
     }
 
+    // ****************************************
+    // TODO: FIX THIS
+    // ****************************************
     internal sealed class LessThanNode : FunctionNode
     {
         protected sealed override string Name => "lessThan";
@@ -714,6 +783,9 @@ namespace Microsoft.VisualStudio.Services.DistributedTask.Expressions
         }
     }
 
+    // ****************************************
+    // TODO: FIX THIS
+    // ****************************************
     internal sealed class LessThanOrEqualNode : FunctionNode
     {
         protected sealed override string Name => "lessThanOrEqual";
@@ -749,6 +821,9 @@ namespace Microsoft.VisualStudio.Services.DistributedTask.Expressions
         }
     }
 
+    // ****************************************
+    // TODO: FIX THIS
+    // ****************************************
     internal sealed class NotEqualNode : FunctionNode
     {
         protected sealed override string Name => "notEqual";
@@ -814,6 +889,9 @@ namespace Microsoft.VisualStudio.Services.DistributedTask.Expressions
         }
     }
 
+    // ****************************************
+    // TODO: FIX THIS
+    // ****************************************
     internal sealed class NotInNode : FunctionNode
     {
         protected sealed override string Name => "notIn";
