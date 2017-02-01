@@ -1,5 +1,4 @@
-﻿using Microsoft.VisualStudio.Services.Agent.Util;
-using Newtonsoft.Json.Linq;
+﻿using Newtonsoft.Json.Linq;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -16,11 +15,16 @@ namespace Microsoft.VisualStudio.Services.DistributedTask.Expressions
             NumberStyles.AllowThousands |
             NumberStyles.AllowTrailingWhite;
 
-        public abstract object GetValue(EvaluationContext context);
-
         internal ContainerNode Container { get; set; }
 
         internal int Level { get; set; }
+
+        protected abstract object GetValue(EvaluationContext context);
+
+        public object GetCanonicalValue(EvaluationContext context, out ValueKind kind)
+        {
+            return ConvertToCanonicalValue(GetValue(context), out kind);
+        }
 
         public bool GetValueAsBoolean(EvaluationContext context)
         {
@@ -61,42 +65,18 @@ namespace Microsoft.VisualStudio.Services.DistributedTask.Expressions
         {
             ValueKind kind;
             object val = GetCanonicalValue(context, out kind);
+            decimal d;
             if (kind == ValueKind.Number)
             {
                 return (decimal)val;
             }
-
-            decimal d;
-            if (TryConvertToNumber(val, kind, out d))
+            else if (TryConvertToNumber(val, kind, out d))
             {
                 TraceValue(context, d);
                 return d;
             }
 
-            throw new ConvertException(val, from: kind, to: ValueKind.Number);
-            // else if (val is Version)
-            // {
-            //     throw new ConvertException(val, ValueKind.Number);
-            // }
-            // else if (val is string && !string.IsNullOrEmpty(val as string))
-            // {
-            //     Exception inner = null;
-            //     try
-            //     {
-            //         decimal.Parse(
-            //             val as string ?? string.Empty,
-            //             NumberStyles,
-            //             CultureInfo.InvariantCulture);
-            //     }
-            //     catch (Exception ex)
-            //     {
-            //         inner = ex;
-            //     }
-
-            //     throw new ConvertException(val, ValueKind.Number, inner);
-            // }
-
-            // return 0;
+            throw new ConvertException(val, fromKind: kind, toKind: ValueKind.Number);
         }
 
         public string GetValueAsString(EvaluationContext context)
@@ -140,110 +120,129 @@ namespace Microsoft.VisualStudio.Services.DistributedTask.Expressions
 
         public Version GetValueAsVersion(EvaluationContext context)
         {
-            object val = GetValue(context);
-            if (val is Version)
+            ValueKind kind;
+            object val = GetCanonicalValue(context, out kind);
+            Version v;
+            if (kind == ValueKind.Version)
             {
                 return val as Version;
             }
-
-            Version v;
-            if (TryConvertToVersion(val, out v))
+            else if (TryConvertToVersion(val, kind, out v))
             {
                 TraceValue(context, v);
                 return v;
             }
 
-            if (val is bool || val is decimal)
-            {
-                throw new ConvertException(val, ValueKind.Version);
-            }
-
-            Exception inner = null;
-            try
-            {
-                Version.Parse(val as string ?? string.Empty);
-            }
-            catch (Exception ex)
-            {
-                inner = ex;
-            }
-
-            throw new ConvertException(val, ValueKind.Version, inner);
+            throw new ConvertException(val, fromKind: kind, toKind: ValueKind.Version);
         }
 
         public bool TryGetValueAsNumber(EvaluationContext context, out decimal result)
         {
-            object val = GetValue(context);
-            if (val is decimal)
+            ValueKind kind;
+            object val = GetCanonicalValue(context, out kind);
+            if (kind == ValueKind.Number)
             {
                 result = (decimal)val;
                 return true;
             }
-
-            if (TryConvertToNumber(val, out result))
+            else if (TryConvertToNumber(val, kind, out result))
             {
                 TraceValue(context, result);
                 return true;
             }
 
-            TraceValue(context, val: null, isUnconverted: false, conversionSoftFailed: "Unable to convert to Number");
+            TraceCoercionFailed(context, fromKind: kind, toKind: ValueKind.Number);
             return false;
         }
 
         public bool TryGetValueAsVersion(EvaluationContext context, out Version result)
         {
-            object val = GetValue(context);
-            if (val is Version)
+            ValueKind kind;
+            object val = GetCanonicalValue(context, out kind);
+            if (kind == ValueKind.Version)
             {
                 result = (Version)val;
                 return true;
             }
-
-            if (TryConvertToVersion(val, out result))
+            else if (TryConvertToVersion(val, kind, out result))
             {
                 TraceValue(context, result);
                 return true;
             }
 
-            TraceValue(context, val: null, isUnconverted: false, conversionSoftFailed: "Unable to convert to Version");
+            TraceCoercionFailed(context, fromKind: kind, toKind: ValueKind.Version);
             return false;
         }
 
-        protected object GetCanonicalValue(object val, out ValueKind kind)
+        internal void TraceValue(EvaluationContext context, object val, bool isLiteral)
+        {
+            ValueKind kind;
+            val = ConvertToCanonicalValue(val, out kind);
+            string prefix = isLiteral ? string.Empty : "=> ";
+            switch (kind)
+            {
+                case ValueKind.Boolean:
+                case ValueKind.Number:
+                case ValueKind.String:
+                case ValueKind.Version:
+                    TraceVerbose(context, String.Format(CultureInfo.InvariantCulture, "{0}{1}: '{2}'", prefix, kind, val));
+                    break;
+                default:
+                    TraceVerbose(context, string.Format(CultureInfo.InvariantCulture, "{0}{1}", prefix, kind));
+                    break;
+            }
+        }
+
+        internal void TraceVerbose(EvaluationContext context, string message)
+        {
+            context.Trace.Verbose(string.Empty.PadLeft(Level * 2, '.') + (message ?? string.Empty));
+        }
+
+        protected void TraceValue(EvaluationContext context, object val)
+        {
+            TraceValue(context, val, isLiteral: false);
+        }
+
+        private void TraceCoercionFailed(EvaluationContext context, ValueKind fromKind, ValueKind toKind)
+        {
+            TraceVerbose(context, string.Format(CultureInfo.InvariantCulture, "=> Unable to coerce {0} to {1}.", fromKind, toKind));
+        }
+
+        private static object ConvertToCanonicalValue(object val, out ValueKind kind)
         {
             if (object.ReferenceEquals(val, null))
             {
                 kind = ValueKind.Null;
                 return null;
             }
-            else if (val is JObject)
+            else if (val is JToken)
             {
-                JObject obj = val as JObject;
-                switch (obj.Type)
+                var jtoken = val as JToken;
+                switch (jtoken.Type)
                 {
                     case JTokenType.Array:
                         kind = ValueKind.Array;
-                        return obj;
+                        return jtoken;
                     case JTokenType.Boolean:
                         kind = ValueKind.Boolean;
-                        return obj.ToObject<bool>();
+                        return jtoken.ToObject<bool>();
                     case JTokenType.Float:
                         kind = ValueKind.Number;
                         // todo: test the extents of the conversion
-                        return obj.ToObject<decimal>();
+                        return jtoken.ToObject<decimal>();
                     case JTokenType.Integer:
                         kind = ValueKind.Number;
                         // todo: test the extents of the conversion
-                        return obj.ToObject<decimal>();
+                        return jtoken.ToObject<decimal>();
                     case JTokenType.Null:
                         kind = ValueKind.Null;
                         return null;
                     case JTokenType.Object:
                         kind = ValueKind.Object;
-                        return obj;
+                        return jtoken;
                     case JTokenType.String:
                         kind = ValueKind.String;
-                        return obj.ToObject<string>();
+                        return jtoken.ToObject<string>();
                 }
             }
             else if (val is string)
@@ -263,7 +262,7 @@ namespace Microsoft.VisualStudio.Services.DistributedTask.Expressions
                     kind = ValueKind.Boolean;
                     return val;
                 }
-                else if (val is decimal || val is byte || val is sbyte || val is short || val is ushort || val is int || val is uint || val is long || val is ulong)
+                else if (val is decimal || val is byte || val is sbyte || val is short || val is ushort || val is int || val is uint || val is long || val is ulong || val is float || val is double)
                 {
                     kind = ValueKind.Number;
                     // todo: test the extents of the conversion
@@ -275,47 +274,7 @@ namespace Microsoft.VisualStudio.Services.DistributedTask.Expressions
             return val;
         }
 
-        protected void TraceVerbose(EvaluationContext context, string message)
-        {
-            context.Trace.Verbose(string.Empty.PadLeft(Level * 2, '.') + (message ?? string.Empty));
-        }
-
-        protected void TraceValue(EvaluationContext context, object val, bool isUnconverted = false, string conversionSoftFailed = "")
-        {
-            string prefix = isUnconverted ? string.Empty : "=> ";
-            if (!string.IsNullOrEmpty(conversionSoftFailed))
-            {
-                TraceVerbose(context, StringUtil.Format("{0}{1}", prefix, conversionSoftFailed));
-            }
-
-            ValueKind kind;
-            if (val is bool)
-            {
-                kind = ValueKind.Boolean;
-                TraceVerbose(context, String.Format(CultureInfo.InvariantCulture, "{0}{1} ({2})", prefix, val, ValueKind.Boolean));
-            }
-            else if (val is decimal)
-            {
-                kind = ValueKind.Number;
-            }
-            else if (val is Version)
-            {
-                kind = ValueKind.Version;
-            }
-            else if (val is string)
-            {
-                kind = ValueKind.String;
-            }
-            else if (object.ReferenceEquals(val, null))
-            {
-                val = "(null)";
-                kind = ValueKind.Object;
-            }
-
-            TraceVerbose(context, String.Format(CultureInfo.InvariantCulture, "{0}{1} ({2})", prefix, val, kind));
-        }
-
-        private bool TryConvertToNumber(object val, ValueKind kind, out decimal result)
+        private static bool TryConvertToNumber(object val, ValueKind kind, out decimal result)
         {
             switch (kind)
             {
@@ -353,7 +312,7 @@ namespace Microsoft.VisualStudio.Services.DistributedTask.Expressions
             }
         }
 
-        private bool TryConvertToVersion(object val, ValueKind kind, out Version result)
+        private static bool TryConvertToVersion(object val, ValueKind kind, out Version result)
         {
             switch (kind)
             {
@@ -388,9 +347,9 @@ namespace Microsoft.VisualStudio.Services.DistributedTask.Expressions
 
         public object Value { get; }
 
-        public sealed override object GetValue(EvaluationContext context)
+        protected sealed override object GetValue(EvaluationContext context)
         {
-            TraceValue(context, Value, isUnconverted: true, conversionSoftFailed: string.Empty);
+            TraceValue(context, Value, isLiteral: true);
             return Value;
         }
     }
@@ -414,34 +373,66 @@ namespace Microsoft.VisualStudio.Services.DistributedTask.Expressions
             node.Container = this;
             node.Level = Level + 1;
         }
-
-        protected object GetItemProperty(object item, string property)
-        {
-            if (item is IDictionary<string, object>)
-            {
-                var dictionary = item as IDictionary<string, object>;
-                object result;
-                if (dictionary.TryGetValue(property ?? string.Empty, out result))
-                {
-                    return result;
-                }
-            }
-
-            return null;
-        }
     }
 
     internal sealed class IndexerNode : ContainerNode
     {
-        public sealed override object GetValue(EvaluationContext context)
+        protected sealed override object GetValue(EvaluationContext context)
         {
-            TraceVerbose(context, $"GetItemProperty");
-            object item = Parameters[0].GetValue(context);
-            string property = Parameters[1].GetValueAsString(context);
-            object result = GetItemProperty(item, property);
+            TraceVerbose(context, $"Indexer");
+            object result = null;
+            ValueKind itemKind;
+            object item = Parameters[0].GetCanonicalValue(context, out itemKind);
+            if (itemKind == ValueKind.Array && item is JArray)
+            {
+                var jarray = item as JArray;
+                ValueKind indexKind;
+                object index = Parameters[1].GetCanonicalValue(context, out indexKind);
+                if (indexKind == ValueKind.Number)
+                {
+                    decimal d = (decimal)index;
+                    if (d >= 0m && d < (decimal)jarray.Count && d == Math.Floor(d))
+                    {
+                        result = jarray[(int)d];
+                    }
+                }
+                else if (indexKind == ValueKind.String && !string.IsNullOrEmpty(index as string))
+                {
+                    decimal d;
+                    if (Parameters[1].TryGetValueAsNumber(context, out d))
+                    {
+                        if (d >= 0m && d < (decimal)jarray.Count && d == Math.Floor(d))
+                        {
+                            result = jarray[(int)d];
+                        }
+                    }
+                }
+            }
+            else if (itemKind == ValueKind.Object && item is JObject)
+            {
+                var jobject = item as JObject;
+                string key = Parameters[1].GetValueAsString(context);
+                result = jobject[key];
+            }
+
             TraceValue(context, result);
             return result;
         }
+
+        // protected object GetItemProperty(object item, string property)
+        // {
+        //     if (item is IDictionary<string, object>)
+        //     {
+        //         var dictionary = item as IDictionary<string, object>;
+        //         object result;
+        //         if (dictionary.TryGetValue(property ?? string.Empty, out result))
+        //         {
+        //             return result;
+        //         }
+        //     }
+
+        //     return null;
+        // }
     }
 
     public abstract class FunctionNode : ContainerNode
@@ -450,15 +441,15 @@ namespace Microsoft.VisualStudio.Services.DistributedTask.Expressions
 
         protected void TraceName(EvaluationContext context)
         {
-            TraceVerbose(context, $"{Name} (Function)");
+            TraceVerbose(context, $"Function: {Name}");
         }
     }
 
     public sealed class AndNode : FunctionNode
     {
-        protected sealed override string Name => "And";
+        protected sealed override string Name => "and";
 
-        public sealed override object GetValue(EvaluationContext context)
+        protected sealed override object GetValue(EvaluationContext context)
         {
             TraceName(context);
             bool result = true;
@@ -478,9 +469,9 @@ namespace Microsoft.VisualStudio.Services.DistributedTask.Expressions
 
     internal sealed class ContainsNode : FunctionNode
     {
-        protected sealed override string Name => "Contains";
+        protected sealed override string Name => "contains";
 
-        public override object GetValue(EvaluationContext context)
+        protected sealed override object GetValue(EvaluationContext context)
         {
             TraceName(context);
             string left = Parameters[0].GetValueAsString(context) ?? string.Empty;
@@ -493,9 +484,9 @@ namespace Microsoft.VisualStudio.Services.DistributedTask.Expressions
 
     internal sealed class EndsWithNode : FunctionNode
     {
-        protected sealed override string Name => "EndsWith";
+        protected sealed override string Name => "endsWith";
 
-        public override object GetValue(EvaluationContext context)
+        protected sealed override object GetValue(EvaluationContext context)
         {
             TraceName(context);
             string left = Parameters[0].GetValueAsString(context) ?? string.Empty;
@@ -508,9 +499,9 @@ namespace Microsoft.VisualStudio.Services.DistributedTask.Expressions
 
     internal sealed class EqualNode : FunctionNode
     {
-        protected sealed override string Name => "Equal";
+        protected sealed override string Name => "equal";
 
-        public override object GetValue(EvaluationContext context)
+        protected sealed override object GetValue(EvaluationContext context)
         {
             TraceName(context);
             bool result;
@@ -560,9 +551,9 @@ namespace Microsoft.VisualStudio.Services.DistributedTask.Expressions
 
     internal sealed class GreaterThanNode : FunctionNode
     {
-        protected sealed override string Name => "GreaterThan";
+        protected sealed override string Name => "greaterThan";
 
-        public sealed override object GetValue(EvaluationContext context)
+        protected sealed override object GetValue(EvaluationContext context)
         {
             TraceName(context);
             bool result;
@@ -595,9 +586,9 @@ namespace Microsoft.VisualStudio.Services.DistributedTask.Expressions
 
     internal sealed class GreaterThanOrEqualNode : FunctionNode
     {
-        protected sealed override string Name => "GreaterThanOrEqual";
+        protected sealed override string Name => "greaterThanOrEqual";
 
-        public sealed override object GetValue(EvaluationContext context)
+        protected sealed override object GetValue(EvaluationContext context)
         {
             TraceName(context);
             bool result;
@@ -630,9 +621,9 @@ namespace Microsoft.VisualStudio.Services.DistributedTask.Expressions
 
     internal sealed class InNode : FunctionNode
     {
-        protected sealed override string Name => "In";
+        protected sealed override string Name => "in";
 
-        public override object GetValue(EvaluationContext context)
+        protected sealed override object GetValue(EvaluationContext context)
         {
             TraceName(context);
             bool result = false;
@@ -690,9 +681,9 @@ namespace Microsoft.VisualStudio.Services.DistributedTask.Expressions
 
     internal sealed class LessThanNode : FunctionNode
     {
-        protected sealed override string Name => "LessThan";
+        protected sealed override string Name => "lessThan";
 
-        public sealed override object GetValue(EvaluationContext context)
+        protected sealed override object GetValue(EvaluationContext context)
         {
             TraceName(context);
             bool result;
@@ -725,9 +716,9 @@ namespace Microsoft.VisualStudio.Services.DistributedTask.Expressions
 
     internal sealed class LessThanOrEqualNode : FunctionNode
     {
-        protected sealed override string Name => "LessThanOrEqual";
+        protected sealed override string Name => "lessThanOrEqual";
 
-        public sealed override object GetValue(EvaluationContext context)
+        protected sealed override object GetValue(EvaluationContext context)
         {
             TraceName(context);
             bool result;
@@ -760,9 +751,9 @@ namespace Microsoft.VisualStudio.Services.DistributedTask.Expressions
 
     internal sealed class NotEqualNode : FunctionNode
     {
-        protected sealed override string Name => "NotEqual";
+        protected sealed override string Name => "notEqual";
 
-        public sealed override object GetValue(EvaluationContext context)
+        protected sealed override object GetValue(EvaluationContext context)
         {
             TraceName(context);
             bool result;
@@ -812,9 +803,9 @@ namespace Microsoft.VisualStudio.Services.DistributedTask.Expressions
 
     internal sealed class NotNode : FunctionNode
     {
-        protected sealed override string Name => "Not";
+        protected sealed override string Name => "not";
 
-        public sealed override object GetValue(EvaluationContext context)
+        protected sealed override object GetValue(EvaluationContext context)
         {
             TraceName(context);
             bool result = !Parameters[0].GetValueAsBoolean(context);
@@ -825,9 +816,9 @@ namespace Microsoft.VisualStudio.Services.DistributedTask.Expressions
 
     internal sealed class NotInNode : FunctionNode
     {
-        protected sealed override string Name => "NotIn";
+        protected sealed override string Name => "notIn";
 
-        public sealed override object GetValue(EvaluationContext context)
+        protected sealed override object GetValue(EvaluationContext context)
         {
             TraceName(context);
             bool found = false;
@@ -886,9 +877,9 @@ namespace Microsoft.VisualStudio.Services.DistributedTask.Expressions
 
     internal sealed class OrNode : FunctionNode
     {
-        protected sealed override string Name => "Or";
+        protected sealed override string Name => "or";
 
-        public sealed override object GetValue(EvaluationContext context)
+        protected sealed override object GetValue(EvaluationContext context)
         {
             TraceName(context);
             bool result = false;
@@ -908,9 +899,9 @@ namespace Microsoft.VisualStudio.Services.DistributedTask.Expressions
 
     internal sealed class StartsWithNode : FunctionNode
     {
-        protected sealed override string Name => "StartsWith";
+        protected sealed override string Name => "startsWith";
 
-        public override object GetValue(EvaluationContext context)
+        protected sealed override object GetValue(EvaluationContext context)
         {
             TraceName(context);
             string left = Parameters[0].GetValueAsString(context) ?? string.Empty;
@@ -923,9 +914,9 @@ namespace Microsoft.VisualStudio.Services.DistributedTask.Expressions
 
     internal sealed class XorNode : FunctionNode
     {
-        protected sealed override string Name => "Xor";
+        protected sealed override string Name => "xor";
 
-        public sealed override object GetValue(EvaluationContext context)
+        protected sealed override object GetValue(EvaluationContext context)
         {
             TraceName(context);
             bool result = Parameters[0].GetValueAsBoolean(context) ^ Parameters[1].GetValueAsBoolean(context);
@@ -949,32 +940,24 @@ namespace Microsoft.VisualStudio.Services.DistributedTask.Expressions
     {
         private readonly string _message;
 
-        public ConvertException(object val, ValueKind toKind, Exception inner = null)
-            : base(string.Empty, inner)
+        public ConvertException(object val, ValueKind fromKind, ValueKind toKind)
         {
             Value = val;
-            if (val is bool)
+            FromKind = fromKind;
+            ToKind = toKind;
+            switch (fromKind)
             {
-                FromKind = ValueKind.Boolean;
-            }
-            else if (val is decimal)
-            {
-                FromKind = ValueKind.Number;
-            }
-            else if (val is Version)
-            {
-                FromKind = ValueKind.Version;
-            }
-            else
-            {
-                FromKind = ValueKind.String;
-            }
-
-            // TODO: loc
-            _message = $"Unable to convert value '{0}' from type {GetKindString(FromKind)} to type {GetKindString(toKind)}.";
-            if (inner != null)
-            {
-                _message = string.Concat(_message, " ", inner.Message);
+                case ValueKind.Boolean:
+                case ValueKind.Number:
+                case ValueKind.String:
+                case ValueKind.Version:
+                    // TODO: loc
+                    _message = $"Unable to convert from {FromKind} to {ToKind}. Value: '{val}'";
+                    break;
+                default:
+                    // TODO: loc
+                    _message = $"Unable to convert from {FromKind} to {ToKind}. Value: '{val}'";
+                    break;
             }
         }
 
@@ -985,11 +968,5 @@ namespace Microsoft.VisualStudio.Services.DistributedTask.Expressions
         public ValueKind ToKind { get; private set; }
 
         public sealed override string Message => _message;
-
-        private static string GetKindString(ValueKind kind)
-        {
-            // TODO: loc
-            return kind.ToString();
-        }
     }
 }

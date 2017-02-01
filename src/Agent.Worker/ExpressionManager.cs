@@ -102,7 +102,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Worker.Expressions
         {
             protected sealed override string Name => Constants.Expressions.Always;
 
-            public override object GetValue(DTExpressions.EvaluationContext evaluationContext)
+            protected sealed override object GetValue(DTExpressions.EvaluationContext evaluationContext)
             {
                 throw new System.NotImplementedException();
             }
@@ -112,7 +112,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Worker.Expressions
         {
             protected sealed override string Name => Constants.Expressions.Succeeded;
 
-            public override object GetValue(DTExpressions.EvaluationContext evaluationContext)
+            protected sealed override object GetValue(DTExpressions.EvaluationContext evaluationContext)
             {
                 throw new System.NotImplementedException();
             }
@@ -122,7 +122,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Worker.Expressions
         {
             protected sealed override string Name => Constants.Expressions.SucceededOrFailed;
 
-            public override object GetValue(DTExpressions.EvaluationContext evaluationContext)
+            protected sealed override object GetValue(DTExpressions.EvaluationContext evaluationContext)
             {
                 throw new System.NotImplementedException();
             }
@@ -132,7 +132,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Worker.Expressions
         {
             protected sealed override string Name => Constants.Expressions.Variables;
 
-            public override object GetValue(DTExpressions.EvaluationContext evaluationContext)
+            protected sealed override object GetValue(DTExpressions.EvaluationContext evaluationContext)
             {
                 TraceName(evaluationContext);
                 var executionContext = evaluationContext.State as IExecutionContext;
