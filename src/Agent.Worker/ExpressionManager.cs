@@ -74,7 +74,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Worker.Expressions
 
             // Evaluate the tree.
             var evaluationContext = new DTExpressions.EvaluationContext(expressionTrace, state: executionContext);
-            return tree.GetValueAsBoolean(evaluationContext);
+            return tree.EvaluateBoolean(evaluationContext);
         }
 
         public sealed class TraceWriter : DTExpressions.ITraceWriter
@@ -102,7 +102,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Worker.Expressions
         {
             protected sealed override string Name => Constants.Expressions.Always;
 
-            protected sealed override object GetValue(DTExpressions.EvaluationContext evaluationContext)
+            protected sealed override object Evaluate(DTExpressions.EvaluationContext evaluationContext)
             {
                 throw new System.NotImplementedException();
             }
@@ -112,7 +112,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Worker.Expressions
         {
             protected sealed override string Name => Constants.Expressions.Succeeded;
 
-            protected sealed override object GetValue(DTExpressions.EvaluationContext evaluationContext)
+            protected sealed override object Evaluate(DTExpressions.EvaluationContext evaluationContext)
             {
                 throw new System.NotImplementedException();
             }
@@ -122,7 +122,7 @@ namespace Microsoft.VisualStudio.Services.Agent.Worker.Expressions
         {
             protected sealed override string Name => Constants.Expressions.SucceededOrFailed;
 
-            protected sealed override object GetValue(DTExpressions.EvaluationContext evaluationContext)
+            protected sealed override object Evaluate(DTExpressions.EvaluationContext evaluationContext)
             {
                 throw new System.NotImplementedException();
             }
@@ -132,14 +132,14 @@ namespace Microsoft.VisualStudio.Services.Agent.Worker.Expressions
         {
             protected sealed override string Name => Constants.Expressions.Variables;
 
-            protected sealed override object GetValue(DTExpressions.EvaluationContext evaluationContext)
+            protected sealed override object Evaluate(DTExpressions.EvaluationContext evaluationContext)
             {
                 TraceName(evaluationContext);
                 var executionContext = evaluationContext.State as IExecutionContext;
                 ArgUtil.NotNull(executionContext, nameof(executionContext));
-                string variableName = Parameters[0].GetValueAsString(evaluationContext);
+                string variableName = Parameters[0].EvaluateString(evaluationContext);
                 string result = executionContext.Variables.Get(variableName) ?? string.Empty;
-                TraceValue(evaluationContext, result);
+                TraceValue(evaluationContext, Level, result);
                 return result;
             }
         }
