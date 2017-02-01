@@ -15,185 +15,46 @@ namespace Microsoft.VisualStudio.Services.DistributedTask.Expressions
             NumberStyles.AllowThousands |
             NumberStyles.AllowTrailingWhite;
 
+        public int Level { get; internal set; }
+
         internal ContainerNode Container { get; set; }
 
-        internal int Level { get; set; }
+        protected abstract object Evaluate(EvaluationContext context);
 
-        protected abstract object GetValue(EvaluationContext context);
-
-        public object GetCanonicalValue(EvaluationContext context, out ValueKind kind)
-        {
-            return ConvertToCanonicalValue(GetValue(context), out kind);
-        }
-
-        public bool GetValueAsBoolean(EvaluationContext context)
-        {
-            bool result;
-            ValueKind kind;
-            object val = GetCanonicalValue(context, out kind);
-            switch (kind)
-            {
-                case ValueKind.Boolean:
-                    result = (bool)val;
-                    break;
-                case ValueKind.Number:
-                    result = (decimal)val != 0m; // 0 converts to false, otherwise true.
-                    TraceValue(context, result);
-                    break;
-                case ValueKind.String:
-                    result = !string.IsNullOrEmpty(val as string);
-                    TraceValue(context, result);
-                    break;
-                case ValueKind.Array:
-                case ValueKind.Object:
-                case ValueKind.Version:
-                    result = true;
-                    TraceValue(context, result);
-                    break;
-                case ValueKind.Null:
-                    result = true;
-                    TraceValue(context, result);
-                    break;
-                default:
-                    throw new NotSupportedException($"Unable to convert value to Boolean. Unexpected value kind '{kind}'.");
-            }
-
-            return result;
-        }
-
-        public decimal GetValueAsNumber(EvaluationContext context)
+        public bool EvaluateBoolean(EvaluationContext context)
         {
             ValueKind kind;
-            object val = GetCanonicalValue(context, out kind);
-            decimal d;
-            if (kind == ValueKind.Number)
-            {
-                return (decimal)val;
-            }
-            else if (TryConvertToNumber(val, kind, out d))
-            {
-                TraceValue(context, d);
-                return d;
-            }
-
-            throw new ConvertException(val, fromKind: kind, toKind: ValueKind.Number);
+            object val = EvaluateCanonical(context, out kind);
+            return ConvertToBoolean(context, Level, val, kind);
         }
 
-        public string GetValueAsString(EvaluationContext context)
+        public object EvaluateCanonical(EvaluationContext context, out ValueKind kind)
         {
-            string result;
-            ValueKind kind;
-            object val = GetCanonicalValue(context, out kind);
-            switch (kind)
-            {
-                case ValueKind.Boolean:
-                    result = string.Format(CultureInfo.InvariantCulture, "{0}", val);
-                    TraceValue(context, result);
-                    return result;
-                case ValueKind.Number:
-                    result = ((decimal)val).ToString("G", CultureInfo.InvariantCulture);
-                    if (result.Contains("."))
-                    {
-                        result = result.TrimEnd('0').TrimEnd('.'); // Omit trailing zeros after the decimal point.
-                    }
-
-                    TraceValue(context, result);
-                    return result;
-                case ValueKind.String:
-                    result = val as string;
-                    return result;
-                case ValueKind.Version:
-                    Version v = val as Version;
-                    result = v.ToString();
-                    TraceValue(context, result);
-                    return result;
-                case ValueKind.Array:
-                case ValueKind.Object:
-                case ValueKind.Null:
-                    result = string.Empty;
-                    TraceValue(context, result);
-                    return result;
-                default:
-                    throw new NotSupportedException($"Unable to convert to String. Unexpected value kind '{kind}'.");
-            }
+            return ConvertToCanonicalValue(Evaluate(context), out kind);
         }
 
-        public Version GetValueAsVersion(EvaluationContext context)
+        public decimal EvaluateNumber(EvaluationContext context)
         {
             ValueKind kind;
-            object val = GetCanonicalValue(context, out kind);
-            Version v;
-            if (kind == ValueKind.Version)
-            {
-                return val as Version;
-            }
-            else if (TryConvertToVersion(val, kind, out v))
-            {
-                TraceValue(context, v);
-                return v;
-            }
-
-            throw new ConvertException(val, fromKind: kind, toKind: ValueKind.Version);
+            object val = EvaluateCanonical(context, out kind);
+            return ConvertToNumber(context, Level, val, kind);
         }
 
-        public bool TryGetValueAsNumber(EvaluationContext context, out decimal result)
+        public string EvaluateString(EvaluationContext context)
         {
             ValueKind kind;
-            object val = GetCanonicalValue(context, out kind);
-            if (kind == ValueKind.Number)
-            {
-                result = (decimal)val;
-                return true;
-            }
-            else if (TryConvertToNumber(val, kind, out result))
-            {
-                TraceValue(context, result);
-                return true;
-            }
-
-            TraceCoercionFailed(context, fromKind: kind, toKind: ValueKind.Number);
-            return false;
+            object val = EvaluateCanonical(context, out kind);
+            return ConvertToString(context, Level, val, kind);
         }
 
-        public bool TryGetValueAsString(EvaluationContext context, out string result)
+        public Version EvaluateVersion(EvaluationContext context)
         {
             ValueKind kind;
-            object val = GetCanonicalValue(context, out kind);
-            if (kind == ValueKind.String)
-            {
-                result = val as string;
-                return true;
-            }
-            else if (TryConvertToString(val, kind, out result))
-            {
-                TraceValue(context, result);
-                return true;
-            }
-
-            TraceCoercionFailed(context, fromKind: kind, toKind: ValueKind.String);
-            return false;
+            object val = EvaluateCanonical(context, out kind);
+            return ConvertToVersion(context, Level, val, kind);
         }
 
-        public bool TryGetValueAsVersion(EvaluationContext context, out Version result)
-        {
-            ValueKind kind;
-            object val = GetCanonicalValue(context, out kind);
-            if (kind == ValueKind.Version)
-            {
-                result = (Version)val;
-                return true;
-            }
-            else if (TryConvertToVersion(val, kind, out result))
-            {
-                TraceValue(context, result);
-                return true;
-            }
-
-            TraceCoercionFailed(context, fromKind: kind, toKind: ValueKind.Version);
-            return false;
-        }
-
-        internal void TraceValue(EvaluationContext context, object val, bool isLiteral)
+        internal void TraceValue(EvaluationContext context, int level, object val, bool isLiteral)
         {
             ValueKind kind;
             val = ConvertToCanonicalValue(val, out kind);
@@ -204,27 +65,281 @@ namespace Microsoft.VisualStudio.Services.DistributedTask.Expressions
                 case ValueKind.Number:
                 case ValueKind.String:
                 case ValueKind.Version:
-                    TraceVerbose(context, String.Format(CultureInfo.InvariantCulture, "{0}{1}: '{2}'", prefix, kind, val));
+                    TraceVerbose(context, level, String.Format(CultureInfo.InvariantCulture, "{0}{1}: '{2}'", prefix, kind, val));
                     break;
                 default:
-                    TraceVerbose(context, string.Format(CultureInfo.InvariantCulture, "{0}{1}", prefix, kind));
+                    TraceVerbose(context, level, string.Format(CultureInfo.InvariantCulture, "{0}{1}", prefix, kind));
                     break;
             }
         }
 
-        internal void TraceVerbose(EvaluationContext context, string message)
+        internal void TraceVerbose(EvaluationContext context, int level, string message)
         {
-            context.Trace.Verbose(string.Empty.PadLeft(Level * 2, '.') + (message ?? string.Empty));
+            context.Trace.Verbose(string.Empty.PadLeft(level * 2, '.') + (message ?? string.Empty));
         }
 
-        protected void TraceValue(EvaluationContext context, object val)
+        protected bool ConvertToBoolean(EvaluationContext context, int level, object val, ValueKind kind)
         {
-            TraceValue(context, val, isLiteral: false);
+            bool result;
+            switch (kind)
+            {
+                case ValueKind.Boolean:
+                    result = (bool)val; // Not converted. Do not trace.
+                    return result;
+
+                case ValueKind.Number:
+                    result = (decimal)val != 0m; // 0 converts to false, otherwise true.
+                    TraceValue(context, level, result);
+                    return result;
+
+                case ValueKind.String:
+                    result = !string.IsNullOrEmpty(val as string);
+                    TraceValue(context, level, result);
+                    return result;
+
+                case ValueKind.Array:
+                case ValueKind.Object:
+                case ValueKind.Version:
+                    result = true;
+                    TraceValue(context, level, result);
+                    return result;
+
+                case ValueKind.Null:
+                    result = true;
+                    TraceValue(context, level, result);
+                    return result;
+
+                default:
+                    throw new NotSupportedException($"Unable to convert value to Boolean. Unexpected value kind '{kind}'.");
+            }
         }
 
-        private void TraceCoercionFailed(EvaluationContext context, ValueKind fromKind, ValueKind toKind)
+        protected object ConvertToNull(EvaluationContext context, int level, object val, ValueKind kind)
         {
-            TraceVerbose(context, string.Format(CultureInfo.InvariantCulture, "=> Unable to coerce {0} to {1}.", fromKind, toKind));
+            object result;
+            if (TryConvertToNull(context, level, val, kind, out result))
+            {
+                return result;
+            }
+
+            throw new ConvertException(val, fromKind: kind, toKind: ValueKind.Null);
+        }
+
+        protected decimal ConvertToNumber(EvaluationContext context, int level, object val, ValueKind kind)
+        {
+            decimal result;
+            if (TryConvertToNumber(context, level, val, kind, out result))
+            {
+                return result;
+            }
+
+            throw new ConvertException(val, fromKind: kind, toKind: ValueKind.Number);
+        }
+
+        protected string ConvertToString(EvaluationContext context, int level, object val, ValueKind kind)
+        {
+            string result;
+            if (TryConvertToString(context, level, val, kind, out result))
+            {
+                return result;
+            }
+
+            throw new ConvertException(val, fromKind: kind, toKind: ValueKind.String);
+        }
+
+        protected Version ConvertToVersion(EvaluationContext context, int level, object val, ValueKind kind)
+        {
+            Version result;
+            if (TryConvertToVersion(context, level, val, kind, out result))
+            {
+                return result;
+            }
+
+            throw new ConvertException(val, fromKind: kind, toKind: ValueKind.Version);
+        }
+
+        protected bool TryConvertToNull(EvaluationContext context, int level, object val, ValueKind kind, out object result)
+        {
+            switch (kind)
+            {
+                case ValueKind.Null:
+                    result = null; // Not converted. Don't trace again.
+                    return true;
+
+                case ValueKind.String:
+                    if (string.IsNullOrEmpty(val as string))
+                    {
+                        result = null;
+                        TraceValue(context, level, null);
+                        return true;
+                    }
+
+                    break;
+            }
+
+            result = null;
+            TraceCoercionFailed(context, level, fromKind: kind, toKind: ValueKind.Null);
+            return false;
+        }
+
+        protected bool TryConvertToNumber(EvaluationContext context, int level, object val, ValueKind kind, out decimal result)
+        {
+            switch (kind)
+            {
+                case ValueKind.Boolean:
+                    result = (bool)val ? 1m : 0m;
+                    TraceValue(context, level, result);
+                    return true;
+
+                case ValueKind.Number:
+                    result = (decimal)val; // Not converted. Don't trace again.
+                    return true;
+
+                case ValueKind.Version:
+                    result = default(decimal);
+                    TraceCoercionFailed(context, level, fromKind: kind, toKind: ValueKind.Number);
+                    return false;
+
+                case ValueKind.String:
+                    string s = val as string ?? string.Empty;
+                    if (string.IsNullOrEmpty(s))
+                    {
+                        result = 0m;
+                        TraceValue(context, level, result);
+                        return true;
+                    }
+
+                    if (decimal.TryParse(s, NumberStyles, CultureInfo.InvariantCulture, out result))
+                    {
+                        TraceValue(context, level, result);
+                        return true;
+                    }
+
+                    TraceCoercionFailed(context, level, fromKind: kind, toKind: ValueKind.Number);
+                    return false;
+
+                case ValueKind.Array:
+                case ValueKind.Object:
+                    result = default(decimal);
+                    TraceCoercionFailed(context, level, fromKind: kind, toKind: ValueKind.Number);
+                    return false;
+
+                case ValueKind.Null:
+                    result = 0m;
+                    TraceValue(context, level, result);
+                    return true;
+
+                default:
+                    throw new NotSupportedException($"Unable to determine whether value can be converted to Number. Unexpected value kind '{kind}'.");
+            }
+        }
+
+        protected bool TryConvertToString(EvaluationContext context, int level, object val, ValueKind kind, out string result)
+        {
+            switch (kind)
+            {
+                case ValueKind.Boolean:
+                    result = string.Format(CultureInfo.InvariantCulture, "{0}", val);
+                    TraceValue(context, level, result);
+                    return true;
+
+                case ValueKind.Number:
+                    result = ((decimal)val).ToString("G", CultureInfo.InvariantCulture);
+                    if (result.Contains("."))
+                    {
+                        result = result.TrimEnd('0').TrimEnd('.'); // Omit trailing zeros after the decimal point.
+                    }
+
+                    TraceValue(context, level, result);
+                    return true;
+
+                case ValueKind.String:
+                    result = val as string; // Not converted. Don't trace again.
+                    return true;
+
+                case ValueKind.Version:
+                    Version v = val as Version;
+                    result = v.ToString();
+                    TraceValue(context, level, result);
+                    return true;
+
+                case ValueKind.Null:
+                    result = string.Empty;
+                    TraceValue(context, level, result);
+                    return true;
+
+                case ValueKind.Array:
+                case ValueKind.Object:
+                    result = null;
+                    TraceCoercionFailed(context, level, fromKind: kind, toKind: ValueKind.String);
+                    return false;
+
+                default:
+                    throw new NotSupportedException($"Unable to convert to String. Unexpected value kind '{kind}'.");
+            }
+        }
+
+        protected bool TryConvertToVersion(EvaluationContext context, int level, object val, ValueKind kind, out Version result)
+        {
+            switch (kind)
+            {
+                case ValueKind.Boolean:
+                    result = null;
+                    TraceCoercionFailed(context, level, fromKind: kind, toKind: ValueKind.Version);
+                    return false;
+
+                case ValueKind.Number:
+                    if (Version.TryParse(string.Format(CultureInfo.InvariantCulture, "{0}", val), out result))
+                    {
+                        TraceValue(context, level, result);
+                        return true;
+                    }
+
+                    TraceCoercionFailed(context, level, fromKind: kind, toKind: ValueKind.Version);
+                    return false;
+
+                case ValueKind.Version:
+                    result = val as Version; // Not converted. Don't trace again.
+                    return true;
+
+                case ValueKind.String:
+                    string s = val as string ?? string.Empty;
+                    if (Version.TryParse(s, out result))
+                    {
+                        TraceValue(context, level, result);
+                        return true;
+                    }
+
+                    TraceCoercionFailed(context, level, fromKind: kind, toKind: ValueKind.Version);
+                    return false;
+
+                case ValueKind.Array:
+                case ValueKind.Object:
+                case ValueKind.Null:
+                    result = null;
+                    TraceCoercionFailed(context, level, fromKind: kind, toKind: ValueKind.Version);
+                    return false;
+
+                default:
+                    throw new NotSupportedException($"Unable to convert to Version. Unexpected value kind '{kind}'.");
+            }
+        }
+
+        // protected bool TryGetValueAsVersion(EvaluationContext context, out Version result)
+        // {
+        //     ValueKind kind;
+        //     object val = GetCanonicalValue(context, out kind);
+        //     return TryConvertToVersion(context, val, kind, out result);
+        // }
+
+        protected void TraceValue(EvaluationContext context, int level, object val)
+        {
+            TraceValue(context, level, val, isLiteral: false);
+        }
+
+        private void TraceCoercionFailed(EvaluationContext context, int level, ValueKind fromKind, ValueKind toKind)
+        {
+            TraceVerbose(context, level, string.Format(CultureInfo.InvariantCulture, "=> Unable to coerce {0} to {1}.", fromKind, toKind));
         }
 
         private static object ConvertToCanonicalValue(object val, out ValueKind kind)
@@ -292,103 +407,6 @@ namespace Microsoft.VisualStudio.Services.DistributedTask.Expressions
             kind = ValueKind.Object;
             return val;
         }
-
-        private static bool TryConvertToNumber(object val, ValueKind kind, out decimal result)
-        {
-            switch (kind)
-            {
-                case ValueKind.Boolean:
-                    result = (bool)val ? 1m : 0m;
-                    return true;
-                case ValueKind.Number:
-                    result = (decimal)val;
-                    return true;
-                case ValueKind.Version:
-                    result = default(decimal);
-                    return false;
-                case ValueKind.String:
-                    string s = val as string ?? string.Empty;
-                    if (string.IsNullOrEmpty(s))
-                    {
-                        result = 0m;
-                        return true;
-                    }
-
-                    return decimal.TryParse(
-                        s,
-                        NumberStyles,
-                        CultureInfo.InvariantCulture,
-                        out result);
-                case ValueKind.Array:
-                case ValueKind.Object:
-                    result = default(decimal);
-                    return false;
-                case ValueKind.Null:
-                    result = 0m;
-                    return true;
-                default:
-                    throw new NotSupportedException($"Unable to determine whether value can be converted to Number. Unexpected value kind '{kind}'.");
-            }
-        }
-
-        private static bool TryConvertToString(object val, ValueKind kind, out string result)
-        {
-            switch (kind)
-            {
-                case ValueKind.Boolean:
-                    result = string.Format(CultureInfo.InvariantCulture, "{0}", val);
-                    return true;
-                case ValueKind.Number:
-                    result = ((decimal)val).ToString("G", CultureInfo.InvariantCulture);
-                    if (result.Contains("."))
-                    {
-                        result = result.TrimEnd('0').TrimEnd('.'); // Omit trailing zeros after the decimal point.
-                    }
-
-                    return true;
-                case ValueKind.String:
-                    result = val as string;
-                    return true;
-                case ValueKind.Version:
-                    Version v = val as Version;
-                    result = v.ToString();
-                    return true;
-                case ValueKind.Null:
-                    result = string.Empty;
-                    return true;
-                case ValueKind.Array:
-                case ValueKind.Object:
-                    result = null;
-                    return false;
-                default:
-                    throw new NotSupportedException($"Unable to convert to String. Unexpected value kind '{kind}'.");
-            }
-        }
-
-        private static bool TryConvertToVersion(object val, ValueKind kind, out Version result)
-        {
-            switch (kind)
-            {
-                case ValueKind.Boolean:
-                    result = null;
-                    return false;
-                case ValueKind.Number:
-                    return Version.TryParse(string.Format(CultureInfo.InvariantCulture, "{0}", val), out result);
-                case ValueKind.Version:
-                    result = val as Version;
-                    return true;
-                case ValueKind.String:
-                    string s = val as string ?? string.Empty;
-                    return Version.TryParse(s, out result);
-                case ValueKind.Array:
-                case ValueKind.Object:
-                case ValueKind.Null:
-                    result = null;
-                    return false;
-                default:
-                    throw new NotSupportedException($"Unable to convert to Version. Unexpected value kind '{kind}'.");
-            }
-        }
     }
 
     public class LeafNode : Node
@@ -400,9 +418,9 @@ namespace Microsoft.VisualStudio.Services.DistributedTask.Expressions
 
         public object Value { get; }
 
-        protected sealed override object GetValue(EvaluationContext context)
+        protected sealed override object Evaluate(EvaluationContext context)
         {
-            TraceValue(context, Value, isLiteral: true);
+            TraceValue(context, Level, Value, isLiteral: true);
             return Value;
         }
     }
@@ -430,17 +448,17 @@ namespace Microsoft.VisualStudio.Services.DistributedTask.Expressions
 
     internal sealed class IndexerNode : ContainerNode
     {
-        protected sealed override object GetValue(EvaluationContext context)
+        protected sealed override object Evaluate(EvaluationContext context)
         {
-            TraceVerbose(context, $"Indexer");
+            TraceVerbose(context, Level, $"Indexer");
             object result = null;
             ValueKind itemKind;
-            object item = Parameters[0].GetCanonicalValue(context, out itemKind);
+            object item = Parameters[0].EvaluateCanonical(context, out itemKind);
             if (itemKind == ValueKind.Array && item is JArray)
             {
                 var jarray = item as JArray;
                 ValueKind indexKind;
-                object index = Parameters[1].GetCanonicalValue(context, out indexKind);
+                object index = Parameters[1].EvaluateCanonical(context, out indexKind);
                 if (indexKind == ValueKind.Number)
                 {
                     decimal d = (decimal)index;
@@ -452,7 +470,7 @@ namespace Microsoft.VisualStudio.Services.DistributedTask.Expressions
                 else if (indexKind == ValueKind.String && !string.IsNullOrEmpty(index as string))
                 {
                     decimal d;
-                    if (Parameters[1].TryGetValueAsNumber(context, out d))
+                    if (TryConvertToNumber(context, Parameters[1].Level, index, indexKind, out d))
                     {
                         if (d >= 0m && d < (decimal)jarray.Count && d == Math.Floor(d))
                         {
@@ -464,14 +482,16 @@ namespace Microsoft.VisualStudio.Services.DistributedTask.Expressions
             else if (itemKind == ValueKind.Object && item is JObject)
             {
                 var jobject = item as JObject;
-                string key;
-                if (Parameters[1].TryGetValueAsString(context, out key))
+                ValueKind indexKind;
+                object index = Parameters[1].EvaluateCanonical(context, out indexKind);
+                string s;
+                if (TryConvertToString(context, Parameters[1].Level, index, indexKind, out s))
                 {
-                    result = jobject[key];
+                    result = jobject[s];
                 }
             }
 
-            TraceValue(context, result);
+            TraceValue(context, Level, result);
             return result;
         }
     }
@@ -482,7 +502,7 @@ namespace Microsoft.VisualStudio.Services.DistributedTask.Expressions
 
         protected void TraceName(EvaluationContext context)
         {
-            TraceVerbose(context, $"Function: {Name}");
+            TraceVerbose(context, Level, $"Function: {Name}");
         }
     }
 
@@ -490,20 +510,20 @@ namespace Microsoft.VisualStudio.Services.DistributedTask.Expressions
     {
         protected sealed override string Name => "and";
 
-        protected sealed override object GetValue(EvaluationContext context)
+        protected sealed override object Evaluate(EvaluationContext context)
         {
             TraceName(context);
             bool result = true;
             foreach (Node parameter in Parameters)
             {
-                if (!parameter.GetValueAsBoolean(context))
+                if (!parameter.EvaluateBoolean(context))
                 {
                     result = false;
                     break;
                 }
             }
 
-            TraceValue(context, result);
+            TraceValue(context, Level, result);
             return result;
         }
     }
@@ -512,13 +532,13 @@ namespace Microsoft.VisualStudio.Services.DistributedTask.Expressions
     {
         protected sealed override string Name => "contains";
 
-        protected sealed override object GetValue(EvaluationContext context)
+        protected sealed override object Evaluate(EvaluationContext context)
         {
             TraceName(context);
-            string left = Parameters[0].GetValueAsString(context) ?? string.Empty;
-            string right = Parameters[1].GetValueAsString(context) ?? string.Empty;
+            string left = Parameters[0].EvaluateString(context) ?? string.Empty;
+            string right = Parameters[1].EvaluateString(context) ?? string.Empty;
             bool result = left.IndexOf(right, StringComparison.OrdinalIgnoreCase) >= 0;
-            TraceValue(context, result);
+            TraceValue(context, Level, result);
             return result;
         }
     }
@@ -527,13 +547,13 @@ namespace Microsoft.VisualStudio.Services.DistributedTask.Expressions
     {
         protected sealed override string Name => "endsWith";
 
-        protected sealed override object GetValue(EvaluationContext context)
+        protected sealed override object Evaluate(EvaluationContext context)
         {
             TraceName(context);
-            string left = Parameters[0].GetValueAsString(context) ?? string.Empty;
-            string right = Parameters[1].GetValueAsString(context) ?? string.Empty;
+            string left = Parameters[0].EvaluateString(context) ?? string.Empty;
+            string right = Parameters[1].EvaluateString(context) ?? string.Empty;
             bool result = left.EndsWith(right, StringComparison.OrdinalIgnoreCase);
-            TraceValue(context, result);
+            TraceValue(context, Level, result);
             return result;
         }
     }
@@ -542,104 +562,117 @@ namespace Microsoft.VisualStudio.Services.DistributedTask.Expressions
     {
         protected sealed override string Name => "equal";
 
-        protected sealed override object GetValue(EvaluationContext context)
+        protected sealed override object Evaluate(EvaluationContext context)
         {
             TraceName(context);
             bool result = false;
             ValueKind leftKind;
-            object left = Parameters[0].GetCanonicalValue(context, out leftKind);
+            object left = Parameters[0].EvaluateCanonical(context, out leftKind);
             if (leftKind == ValueKind.Boolean)
             {
-                bool right = Parameters[1].GetValueAsBoolean(context);
+                bool right = Parameters[1].EvaluateBoolean(context);
                 result = (bool)left == right;
             }
             else if (leftKind == ValueKind.Number)
             {
-                decimal right;
-                if (Parameters[1].TryGetValueAsNumber(context, out right))
+                ValueKind rightKind;
+                object right = Parameters[1].EvaluateCanonical(context, out rightKind);
+                decimal d;
+                if (TryConvertToNumber(context, Parameters[1].Level, right, rightKind, out d))
                 {
-                    result = (decimal)left == right;
+                    result = (decimal)left == d;
                 }
             }
             else if (leftKind == ValueKind.Version)
             {
-                Version right;
-                if (Parameters[1].TryGetValueAsVersion(context, out right))
+                ValueKind rightKind;
+                object right = Parameters[1].EvaluateCanonical(context, out rightKind);
+                Version v;
+                if (TryConvertToVersion(context, Parameters[1].Level, right, rightKind, out v))
                 {
-                    result = (Version)left == right;
+                    result = (Version)left == v;
                 }
             }
             else if (leftKind == ValueKind.String)
             {
-                string right;
-                if (Parameters[1].TryGetValueAsString(context, out right))
+                ValueKind rightKind;
+                object right = Parameters[1].EvaluateCanonical(context, out rightKind);
+                string s;
+                if (TryConvertToString(context, Parameters[1].Level, right, rightKind, out s))
                 {
                     result = string.Equals(
                         left as string ?? string.Empty,
-                        right ?? string.Empty,
+                        s ?? string.Empty,
                         StringComparison.OrdinalIgnoreCase);
                 }
             }
             else if (leftKind == ValueKind.Array || leftKind == ValueKind.Object)
             {
                 ValueKind rightKind;
-                object right = Parameters[1].GetCanonicalValue(context, out rightKind);
+                object right = Parameters[1].EvaluateCanonical(context, out rightKind);
                 result = leftKind == rightKind && object.ReferenceEquals(left, right);
             }
             else if (leftKind == ValueKind.Null)
             {
                 ValueKind rightKind;
-                object right = Parameters[1].GetCanonicalValue(context, out rightKind);
-                switch (rightKind)
+                object right = Parameters[1].EvaluateCanonical(context, out rightKind);
+                object n;
+                if (TryConvertToNull(context, Parameters[1].Level, right, rightKind, out n))
                 {
-                    case ValueKind.Null:
-                        result = true;
-                        break;
-                    case ValueKind.String:
-                        result = string.IsNullOrEmpty(right as string);
-                        break;
+                    result = true;
                 }
             }
 
-            TraceValue(context, result);
+            TraceValue(context, Level, result);
             return result;
         }
     }
 
-    // ****************************************
-    // TODO: FIX THIS
-    // ****************************************
     internal sealed class GreaterThanNode : FunctionNode
     {
         protected sealed override string Name => "greaterThan";
 
-        protected sealed override object GetValue(EvaluationContext context)
+        protected sealed override object Evaluate(EvaluationContext context)
         {
             TraceName(context);
             bool result;
-            object left = Parameters[0].GetValue(context);
-            if (left is bool)
+            ValueKind leftKind;
+            object left = Parameters[0].EvaluateCanonical(context, out leftKind);
+            switch (leftKind)
             {
-                bool right = Parameters[1].GetValueAsBoolean(context);
-                result = ((bool)left).CompareTo(right) > 0;
-            }
-            else if (left is decimal)
-            {
-                decimal right = Parameters[1].GetValueAsNumber(context);
-                result = ((decimal)left).CompareTo(right) > 0;
-            }
-            else if (left is Version)
-            {
-                Version right = Parameters[1].GetValueAsVersion(context);
-                result = (left as Version).CompareTo(right) > 0;
-            }
-            else
-            {
-                string right = Parameters[1].GetValueAsString(context);
-                result = string.Compare(left as string ?? string.Empty, right ?? string.Empty, StringComparison.OrdinalIgnoreCase) > 0;
+                case ValueKind.Boolean:
+                case ValueKind.Number:
+                case ValueKind.String:
+                case ValueKind.Version:
+                    break;
+                default:
+                    left = Parameters[0].EvaluateNumber(context); // Will throw or succeed
+                    leftKind = ValueKind.Number;
+                    break;
             }
 
-            TraceValue(context, result);
+            if (leftKind == ValueKind.Boolean)
+            {
+                bool right = Parameters[1].EvaluateBoolean(context);
+                result = ((bool)left).CompareTo(right) > 0;
+            }
+            else if (leftKind == ValueKind.Number)
+            {
+                decimal right = Parameters[1].EvaluateNumber(context);
+                result = ((decimal)left).CompareTo(right) > 0;
+            }
+            else if (leftKind == ValueKind.String)
+            {
+                string right = Parameters[1].EvaluateString(context);
+                result = string.Compare(left as string ?? string.Empty, right ?? string.Empty, StringComparison.OrdinalIgnoreCase) > 0;
+            }
+            else //if (leftKind == ValueKind.Version)
+            {
+                Version right = Parameters[1].EvaluateVersion(context);
+                result = (left as Version).CompareTo(right) > 0;
+            }
+
+            TraceValue(context, Level, result);
             return result;
         }
     }
